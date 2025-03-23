@@ -50,6 +50,15 @@ if [[ ! -f "$KEY_FILE" ]]; then
   fi
 fi
 
+for script in setup_server_master.sh secure_hardening_master.sh; do
+  if [[ ! -f "$SCRIPT_DIR/$script" ]]; then
+    log "📥 Загружаем $script из GitHub..."
+    curl -fsSL "$SCRIPT_URL_BASE/$script" -o "$SCRIPT_DIR/$script"
+    chmod +x "$SCRIPT_DIR/$script"
+  fi
+done
+
+
 # Меню выбора установки
 PS3="Выберите мастер-скрипт для установки: "
 options=(
