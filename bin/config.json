@@ -1,0 +1,28 @@
+{
+  "username": "igrom",
+  "port": 5075,
+  "ssh_key_file": "/usr/local/bin/ssh_key.pub",
+  "log_file": "/var/log/setupv2.log",
+
+  "sudo_nopasswd": true,
+  "fail2ban_enabled": true,
+  "firewall": "ufw",
+  "enable_dos_protection": true,
+
+  "ssh_disable_root": true,
+  "ssh_password_auth": false,
+  "max_auth_tries": 3,
+  "max_sessions": 2,
+  "login_grace_time": 30,
+
+  "telegram_enabled": true,
+  "telegram_bot_token": "8019987480:AA...yourToken...",
+  "telegram_chat_id": "543102005",
+  "telegram_server_label": "🌍 Сервер: 77.73.235.118 (Латвия)",
+
+  "monitoring_enabled": true,
+  "monitoring_tool": "netdata", 
+  "clear_logs_cron": "0 5 * * 0",
+  "auto_update_cron": "0 3 * * *",
+  "security_check_cron": "0 6 * * *"
+}
