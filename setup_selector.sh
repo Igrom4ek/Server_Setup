@@ -4,7 +4,6 @@ CONFIG_FILE="/usr/local/bin/config.json"
 SCRIPT_DIR="/usr/local/bin"
 LOG_FILE="/var/log/setup_selector.log"
 SCRIPT_URL_BASE="https://raw.githubusercontent.com/Igrom4ek/Server_Setup/main"
-SCRIPTS_PATH="bin"
 
 log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG_FILE"
@@ -13,9 +12,9 @@ log() {
 # Установка jq, если отсутствует
 if ! command -v jq &>/dev/null; then
   log "Устанавливаем jq..."
-  apt update && apt install jq -y
+  apt update && apt install -y jq
   if [[ $? -ne 0 ]]; then
-    log "Ошибка установки jq"
+    log "Не удалось установить jq"
     exit 1
   fi
 fi
@@ -23,7 +22,7 @@ fi
 # Загрузка config.json, если отсутствует
 if [[ ! -f "$CONFIG_FILE" ]]; then
   log "Загружаем config.json с GitHub..."
-  curl -fsSL "$SCRIPT_URL_BASE/$SCRIPTS_PATH/config.json" -o "$CONFIG_FILE"
+  curl -fsSL "$SCRIPT_URL_BASE/config.json" -o "$CONFIG_FILE"
   if [[ ! -f "$CONFIG_FILE" ]]; then
     log "Не удалось загрузить config.json"
     exit 1
@@ -32,7 +31,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
   log "config.json успешно загружен"
 fi
 
-# Извлечение параметров
+# Извлечение параметров из config.json
 USERNAME=$(jq -r '.username // "igrom"' "$CONFIG_FILE")
 PORT=$(jq -r '.port // 5075' "$CONFIG_FILE")
 KEY_FILE=$(jq -r '.ssh_key_file // "/usr/local/bin/ssh_key.pub"' "$CONFIG_FILE")
@@ -40,15 +39,13 @@ KEY_FILE=$(jq -r '.ssh_key_file // "/usr/local/bin/ssh_key.pub"' "$CONFIG_FILE")
 # Проверка SSH-ключа (загрузка или ввод вручную)
 if [[ ! -f "$KEY_FILE" ]]; then
   log "SSH-ключ не найден: $KEY_FILE"
-  if curl -fsSL "$SCRIPT_URL_BASE/$SCRIPTS_PATH/id_ed25519.pub" -o "$KEY_FILE"; then
+  if curl -fsSL "$SCRIPT_URL_BASE/bin/id_ed25519.pub" -o "$KEY_FILE"; then
     chmod 644 "$KEY_FILE"
     log "SSH-ключ загружен из GitHub в $KEY_FILE"
   else
-    log "Не удалось загрузить SSH-ключ с GitHub, запрашиваем ввод вручную"
     read -p "Введите SSH-публичный ключ вручную: " SSH_KEY
     if [[ ! "$SSH_KEY" =~ ^ssh-(rsa|ed25519) ]]; then
-      echo "Неверный формат SSH-ключа"
-      log "Ошибка: Неверный формат SSH-ключа"
+      log "Неверный формат SSH-ключа"
       exit 1
     fi
     echo "$SSH_KEY" > "$KEY_FILE"
@@ -57,50 +54,54 @@ if [[ ! -f "$KEY_FILE" ]]; then
   fi
 fi
 
-# Загрузка необходимых скриптов
-for script in setup_server_master.sh secure_hardening_master.sh install.sh; do
-  if [[ ! -f "$SCRIPT_DIR/$script" ]]; then
-    log "Загружаем $script из GitHub..."
-    if curl -fsSL "$SCRIPT_URL_BASE/$SCRIPTS_PATH/$script" -o "$SCRIPT_DIR/$script"; then
-      chmod +x "$SCRIPT_DIR/$script"
-      log "$script успешно загружен"
-    else
-      log "Ошибка загрузки $script — проверь путь или наличие файла в репозитории"
-      exit 1
-    fi
-  fi
-done
-
 # Меню выбора установки
-echo "Выберите опцию установки:"
-echo "1. Базовая установка сервера (setup_server_master.sh)"
-echo "2. Установка защиты и мониторинга (secure_hardening_master.sh)"
-echo "3. Установка Netdata (install.sh)"
-echo "4. Выход"
-read -p "Выберите номер: " choice
+PS3="Выберите мастер-скрипт для установки: "
+options=(
+  "1. Базовая установка сервера (setup_server_master.sh)"
+  "2. Установка защиты и мониторинга (secure_hardening_master.sh)"
+  "3. Установка Docker и Netdata (install_docker_and_netdata.sh)"
+  "4. Выход"
+)
 
-case $choice in
-  1)
-    log "Запускаем базовую установку через setup_server_master.sh..."
-    bash "$SCRIPT_DIR/setup_server_master.sh" --username="$USERNAME" --port="$PORT" --key-file="$KEY_FILE"
-    ;;
-  2)
-    log "Запускаем защиту и мониторинг через secure_hardening_master.sh..."
-    bash "$SCRIPT_DIR/secure_hardening_master.sh"
-    ;;
-  3)
-    log "Запускаем установку Netdata через install.sh..."
-    bash "$SCRIPT_DIR/install.sh"
-    ;;
-  4)
-    echo "Выход."
-    log "Выход из скрипта"
-    exit 0
-    ;;
-  *)
-    echo "Неверный выбор."
-    log "Ошибка: Неверный выбор в меню"
-    ;;
-esac
-
-exit 0
+select opt in "${options[@]}"
+do
+  case $REPLY in
+    1)
+      log "Запускаем базовую установку через setup_server_master.sh..."
+      bash "$SCRIPT_DIR/setup_server_master.sh" --username="$USERNAME" --port="$PORT" --key-file="$KEY_FILE"
+      if [[ $? -eq 0 ]]; then
+        log "Базовая установка завершена успешно"
+      else
+        log "Ошибка при выполнении setup_server_master.sh"
+      fi
+      break
+      ;;
+    2)
+      log "Запускаем защиту и мониторинг через secure_hardening_master.sh..."
+      bash "$SCRIPT_DIR/secure_hardening_master.sh"
+      if [[ $? -eq 0 ]]; then
+        log "Установка защиты завершена успешно"
+      else
+        log "Ошибка при выполнении secure_hardening_master.sh"
+      fi
+      break
+      ;;
+    3)
+      log "Запускаем установку Docker и Netdata через install_docker_and_netdata.sh..."
+      bash "$SCRIPT_DIR/install_docker_and_netdata.sh"
+      if [[ $? -eq 0 ]]; then
+        log "Установка Docker и Netdata завершена успешно"
+      else
+        log "Ошибка при выполнении install_docker_and_netdata.sh"
+      fi
+      break
+      ;;
+    4)
+      echo "Выход."
+      break
+      ;;
+    *)
+      echo "Неверный выбор. Повторите."
+      ;;
+  esac
+done
