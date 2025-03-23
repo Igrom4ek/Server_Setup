@@ -5,19 +5,19 @@
 
 SCRIPT_URL_BASE="https://raw.githubusercontent.com/Igrom4ek/Server_Setup/main"
 SETUP_SCRIPT_PATH="/usr/local/bin/setup_server.sh"
-SSH_KEY_PATH="/usr/local/bin/ssh_key.pub"
 CONFIG_FILE="/usr/local/bin/config.json"
 LOG_FILE="/var/log/setupv2_master.log"
 
-# Функция логирования
 log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG_FILE"
 }
 
+log "🚀 Установка setup_server через мастер-скрипт"
+
 # Установка jq, если отсутствует
 if ! command -v jq &>/dev/null; then
   log "📦 Устанавливаем jq..."
-  sudo apt update && sudo apt install jq -y
+  apt update && apt install jq -y
   if ! command -v jq &>/dev/null; then
     log "❌ Не удалось установить jq"
     exit 1
@@ -27,7 +27,7 @@ fi
 # Загрузка config.json, если его нет
 if [[ ! -f "$CONFIG_FILE" ]]; then
   log "📥 Загружаем config.json с GitHub..."
-  curl -fsSL "$SCRIPT_URL_BASE/config.json" -o "$CONFIG_FILE"
+  curl -fsSL "$SCRIPT_URL_BASE/bin/config.json" -o "$CONFIG_FILE"
   if [[ ! -f "$CONFIG_FILE" ]]; then
     log "❌ Не удалось загрузить config.json"
     exit 1
@@ -39,55 +39,64 @@ fi
 # Извлечение параметров из config.json
 USERNAME=$(jq -r '.username // "igrom"' "$CONFIG_FILE")
 PORT=$(jq -r '.port // 5075' "$CONFIG_FILE")
-SSH_KEY_FILE_CONFIG=$(jq -r '.ssh_key_file // "/usr/local/bin/ssh_key.pub"' "$CONFIG_FILE")
+SSH_KEY_PATH=$(jq -r '.ssh_key_file // "/usr/local/bin/ssh_key.pub"' "$CONFIG_FILE")
 
 # Переопределение параметров через аргументы командной строки
 for arg in "$@"; do
   case $arg in
     --username=*) USERNAME="${arg#*=}" ;;
     --port=*) PORT="${arg#*=}" ;;
-    --key-file=*) SSH_KEY_FILE_CONFIG="${arg#*=}" ;;
-    --config=*) CONFIG_FILE="${arg#*=}" ;;
+    --key-file=*) SSH_KEY_PATH="${arg#*=}" ;;
+    *) CONFIG_FILE="$arg" ;;
   esac
-done
+  shift
+end
 
-log "🚀 Установка setup_server через мастер-скрипт"
+log "🔧 Используем порт из config.json: $PORT"
+log "🔧 Пользователь: $USERNAME"
+log "🔧 SSH-ключ: $SSH_KEY_PATH"
 
-# Загрузка setup_server.sh
-log "📦 Загружаем setup_server.sh..."
-curl -fsSL "$SCRIPT_URL_BASE/bin/setup_server.sh" -o "$SETUP_SCRIPT_PATH"
+# Загрузка setup_server.sh, если отсутствует
+if [[ ! -f "$SETUP_SCRIPT_PATH" ]]; then
+  log "📦 Загружаем setup_server.sh..."
+  curl -fsSL "$SCRIPT_URL_BASE/bin/setup_server.sh" -o "$SETUP_SCRIPT_PATH"
+  if [[ ! -f "$SETUP_SCRIPT_PATH" ]]; then
+    log "❌ Не удалось загрузить setup_server.sh"
+    exit 1
+  fi
+  chmod +x "$SETUP_SCRIPT_PATH"
+  log "✅ setup_server.sh загружен"
+fi
+
+# Настройка SSH: изменение /etc/ssh/sshd_config
+log "🛠 Настраиваем SSH-параметры в /etc/ssh/sshd_config..."
+sed -i "s/^#\?Port .*/Port $PORT/" /etc/ssh/sshd_config
+sed -i "s/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/" /etc/ssh/sshd_config
+sed -i "s|^#\?AuthorizedKeysFile .*|AuthorizedKeysFile .ssh/authorized_keys|" /etc/ssh/sshd_config
+sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" /etc/ssh/sshd_config
+sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" /etc/ssh/sshd_config
+
+# Добавление параметров, если они вообще отсутствуют
+add_if_missing() {
+  grep -q "^$1" /etc/ssh/sshd_config || echo "$1" >> /etc/ssh/sshd_config
+}
+
+add_if_missing "Port $PORT"
+add_if_missing "PubkeyAuthentication yes"
+add_if_missing "AuthorizedKeysFile .ssh/authorized_keys"
+add_if_missing "PasswordAuthentication no"
+add_if_missing "PermitRootLogin no"
+
+log "🔄 Перезапускаем SSH на порту $PORT..."
+systemctl restart ssh
+
+# Запуск основного setup-скрипта
+log "🚀 Выполняем setup_server.sh"
+sudo bash "$SETUP_SCRIPT_PATH"
 if [[ $? -ne 0 ]]; then
-  log "❌ Не удалось загрузить setup_server.sh"
-  exit 1
-fi
-chmod +x "$SETUP_SCRIPT_PATH"
-log "✅ setup_server.sh установлен"
-
-# Загрузка ssh_key.pub, если указан в config.json
-if [[ "$SSH_KEY_FILE_CONFIG" == "$SSH_KEY_PATH" ]] && [[ ! -f "$SSH_KEY_PATH" ]]; then
-  log "📥 Загружаем SSH-ключ с GitHub..."
-  curl -fsSL "$SCRIPT_URL_BASE/bin/ssh_key.pub" -o "$SSH_KEY_PATH"
-  if [[ $? -ne 0 ]]; then
-    log "❌ Не удалось загрузить ssh_key.pub"
-    exit 1
-  fi
-  chmod 644 "$SSH_KEY_PATH"
-  log "✅ SSH-ключ загружен"
-else
-  SSH_KEY_PATH="$SSH_KEY_FILE_CONFIG"
-  if [[ ! -f "$SSH_KEY_PATH" ]]; then
-    log "⚠️ SSH-ключ не найден: $SSH_KEY_PATH. Установка прервана."
-    exit 1
-  fi
-fi
-
-# Запуск setup_server.sh с параметрами
-log "🚀 Запускаем установку сервера с параметрами: username=$USERNAME, port=$PORT, key-file=$SSH_KEY_PATH"
-sudo "$SETUP_SCRIPT_PATH" --username "$USERNAME" --port "$PORT" --key-file "$SSH_KEY_PATH" "$@"
-
-if [[ $? -eq 0 ]]; then
-  log "🏁 Установка успешно завершена"
-else
   log "❌ Ошибка при выполнении setup_server.sh"
   exit 1
 fi
+
+log "✅ Установка завершена"
+exit 0
