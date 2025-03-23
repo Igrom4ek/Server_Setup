@@ -32,7 +32,7 @@ USERNAME=$(jq -r '.username // "igrom"' "$CONFIG_FILE")
 PORT=$(jq -r '.port // 5075' "$CONFIG_FILE")
 KEY_FILE=$(jq -r '.ssh_key_file // "/usr/local/bin/ssh_key.pub"' "$CONFIG_FILE")
 
-# Проверка ssh-ключа или загрузка из GitHub
+# Проверка SSH-ключа (загрузка или ввод вручную)
 if [[ ! -f "$KEY_FILE" ]]; then
   log "⚠️ SSH-ключ не найден: $KEY_FILE"
   if curl -fsSL "$SCRIPT_URL_BASE/bin/id_ed25519.pub" -o "$KEY_FILE"; then
@@ -50,7 +50,7 @@ if [[ ! -f "$KEY_FILE" ]]; then
   fi
 fi
 
-# Меню выбора действия
+# Меню выбора установки
 PS3="Выберите мастер-скрипт для установки: "
 options=(
   "1. Базовая установка сервера (setup_server_master.sh)"
