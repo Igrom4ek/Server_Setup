@@ -29,7 +29,8 @@ log() {
 
 log "Создаём $SECURE_SCRIPT..."
 
-install -m 755 /dev/stdin "$SECURE_SCRIPT" <<'EOF'
+# Создаем скрипт с использованием cat (без ограничивающих символов)
+cat > "$SECURE_SCRIPT" << 'END_OF_SCRIPT'
 #!/bin/bash
 set -e
 
@@ -57,7 +58,8 @@ send_telegram() {
     curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
          -d chat_id="${CHAT_ID}" \
          -d parse_mode="Markdown" \
-         -d text="$1\nServer: \`${SERVER_IP}\`" > /dev/null
+         -d text="$1
+Server: \`${SERVER_IP}\`" > /dev/null
 }
 
 log "Установка модулей безопасности"
@@ -66,7 +68,7 @@ log "Установка пакетов: fail2ban, psad, rkhunter"
 apt install -y fail2ban psad rkhunter curl wget net-tools ufw > /dev/null
 
 log "Настройка fail2ban"
-cat > /etc/fail2ban/jail.local <<EOL
+cat > /etc/fail2ban/jail.local <<'EOL'
 [sshd]
 enabled = true
 port = ssh
@@ -96,7 +98,7 @@ rkhunter --update
 rkhunter --propupd
 
 log "Настройка logrotate для /var/log/security_monitor.log"
-cat > /etc/logrotate.d/security_monitor <<EOL
+cat > /etc/logrotate.d/security_monitor <<'EOL'
 /var/log/security_monitor.log {
     weekly
     rotate 4
@@ -107,7 +109,7 @@ cat > /etc/logrotate.d/security_monitor <<EOL
 }
 EOL
 
-install -m 755 /dev/stdin "/usr/local/bin/security_monitor.sh" <<'EOM'
+cat > /usr/local/bin/security_monitor.sh << 'EOM'
 #!/bin/bash
 LOG_FILE="/var/log/security_monitor.log"
 BOT_TOKEN="BOTTOKEN"
@@ -118,7 +120,8 @@ send_telegram() {
     curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
         -d chat_id="${CHAT_ID}" \
         -d parse_mode="Markdown" \
-        -d text="$1\nServer: \`${SERVER_IP}\`" > /dev/null
+        -d text="$1
+Server: \`${SERVER_IP}\`" > /dev/null
 }
 
 timestamp() {
@@ -129,14 +132,20 @@ echo "$(timestamp) | Security check started" >> "$LOG_FILE"
 
 RKHUNTER_RESULT=$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || true)
 if [ -n "$RKHUNTER_RESULT" ]; then
-    send_telegram "RKHunter Warning:\n\`\`\`\n$RKHUNTER_RESULT\n\`\`\`"
+    send_telegram "RKHunter Warning:
+\`\`\`
+$RKHUNTER_RESULT
+\`\`\`"
 else
     send_telegram "RKHunter: OK — no threats found."
 fi
 
 PSAD_ALERTS=$(grep "Danger level" /var/log/psad/alert | tail -n 5 || true)
 if echo "$PSAD_ALERTS" | grep -q "Danger level"; then
-    send_telegram "PSAD Alert:\n\`\`\`\n$PSAD_ALERTS\n\`\`\`"
+    send_telegram "PSAD Alert:
+\`\`\`
+$PSAD_ALERTS
+\`\`\`"
 else
     send_telegram "PSAD: No suspicious activity."
 fi
@@ -144,32 +153,41 @@ fi
 echo "$(timestamp) | Security check finished" >> "$LOG_FILE"
 EOM
 
-install -m 755 /dev/stdin "/usr/local/bin/clear_security_log.sh" <<'EOM'
+cat > /usr/local/bin/clear_security_log.sh << 'EOM'
 #!/bin/bash
 LOG_FILE="/var/log/security_monitor.log"
 echo "$(date '+%Y-%m-%d %H:%M:%S') | Log cleared" > "$LOG_FILE"
 EOM
 
+chmod +x /usr/local/bin/security_monitor.sh
+chmod +x /usr/local/bin/clear_security_log.sh
+
 if $USE_CRON; then
   log "Настройка cron-задач"
+  # Используем временный файл вместо команды в скобках
   TEMP_CRON=$(mktemp)
-  crontab -l > "$TEMP_CRON" 2>/dev/null || true
-  echo "SECURITY_CRON /usr/local/bin/security_monitor.sh" >> "$TEMP_CRON"
-  echo "CLEAR_LOG_CRON /usr/local/bin/clear_security_log.sh" >> "$TEMP_CRON"
-  sort -u "$TEMP_CRON" | crontab -
-  rm "$TEMP_CRON"
+  crontab -l > "$TEMP_CRON" 2>/dev/null || echo "" > "$TEMP_CRON"
+  grep -v "security_monitor.sh" "$TEMP_CRON" > "${TEMP_CRON}.new"
+  grep -v "clear_security_log.sh" "${TEMP_CRON}.new" > "$TEMP_CRON"
+  echo "SECURITY_CRON_PLACEHOLDER /usr/local/bin/security_monitor.sh" >> "$TEMP_CRON"
+  echo "CLEAR_LOG_CRON_PLACEHOLDER /usr/local/bin/clear_security_log.sh" >> "$TEMP_CRON"
+  crontab "$TEMP_CRON"
+  rm -f "$TEMP_CRON" "${TEMP_CRON}.new"
 fi
 
 log "Установка безопасности завершена"
 send_telegram "Сервер успешно защищён."
-EOF
+END_OF_SCRIPT
 
-# Замена переменных в скрипте
+# Заменяем плейсхолдеры на реальные значения
 sed -i "s/BOTTOKEN/$BOT_TOKEN/g" "$SECURE_SCRIPT"
 sed -i "s/CHATID/$CHAT_ID/g" "$SECURE_SCRIPT"
 sed -i "s/SERVERIP/$SERVER_IP/g" "$SECURE_SCRIPT"
-sed -i "s/SECURITY_CRON/$SECURITY_CRON/g" "$SECURE_SCRIPT"
-sed -i "s/CLEAR_LOG_CRON/$CLEAR_LOG_CRON/g" "$SECURE_SCRIPT"
+sed -i "s/SECURITY_CRON_PLACEHOLDER/$SECURITY_CRON/g" "$SECURE_SCRIPT"
+sed -i "s/CLEAR_LOG_CRON_PLACEHOLDER/$CLEAR_LOG_CRON/g" "$SECURE_SCRIPT"
+
+# Делаем его исполняемым
+chmod +x "$SECURE_SCRIPT"
 
 log "Установка Netdata..."
 bash -c "$(curl -Ss https://my-netdata.io/kickstart.sh)" >> "$LOG_FILE" 2>&1
