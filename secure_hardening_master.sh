@@ -27,14 +27,13 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG_FILE"
 }
 
-log "📦 Создаём $SECURE_SCRIPT..."
+log "Создаём $SECURE_SCRIPT..."
 
 install -m 755 /dev/stdin "$SECURE_SCRIPT" <<EOF
 #!/bin/bash
 set -e
 
 LOG_FILE="/var/log/secure_setup.log"
-CRON_TMP="/tmp/cron_check.txt"
 BOT_TOKEN="$BOT_TOKEN"
 CHAT_ID="$CHAT_ID"
 SERVER_IP="$SERVER_IP"
@@ -58,15 +57,15 @@ send_telegram() {
     curl -s -X POST "https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage" \
          -d chat_id="\${CHAT_ID}" \
          -d parse_mode="Markdown" \
-         -d text="🛡 \$1\n🌍 Сервер: \\`\${SERVER_IP}\\`" > /dev/null
+         -d text="\$1\nServer: \\\`\${SERVER_IP}\\\`" > /dev/null
 }
 
-log "🔐 Начинаем установку модулей безопасности"
+log "Установка модулей безопасности"
 
-log "📦 Установка пакетов: fail2ban, psad, rkhunter"
+log "Установка пакетов: fail2ban, psad, rkhunter"
 apt install -y fail2ban psad rkhunter curl wget net-tools ufw > /dev/null
 
-log "🛡 Настройка fail2ban"
+log "Настройка fail2ban"
 cat > /etc/fail2ban/jail.local <<EOL
 [sshd]
 enabled = true
@@ -81,26 +80,22 @@ EOL
 systemctl enable fail2ban
 systemctl restart fail2ban
 
-log "🔥 Настройка UFW"
+log "Настройка UFW"
 ufw allow ssh
-ufw enable
+ufw --force enable
 
-log "🔍 Настройка PSAD"
-sed -i 's/EMAIL_ADDRESSES             all/EMAIL_ADDRESSES             root/' /etc/psad/psad.conf
+log "Настройка PSAD"
+sed -i 's/EMAIL_ADDRESSES\s\+all/EMAIL_ADDRESSES root/' /etc/psad/psad.conf
 psad --sig-update
 psad -H
 systemctl restart psad
 systemctl enable psad
 
-log "🔎 Настройка RKHunter"
+log "Настройка RKHunter"
 rkhunter --update
 rkhunter --propupd
 
-log "📊 Установка Netdata"
-bash <(curl -Ss https://my-netdata.io/kickstart.sh) >> "\$LOG_FILE" 2>&1
-log "✅ Установка Netdata завершена. Доступ: http://<ip>:19999"
-
-log "🔁 Настройка logrotate для /var/log/security_monitor.log"
+log "Настройка logrotate для /var/log/security_monitor.log"
 cat > /etc/logrotate.d/security_monitor <<EOL
 /var/log/security_monitor.log {
     weekly
@@ -123,55 +118,53 @@ send_telegram() {
     curl -s -X POST "https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage" \
         -d chat_id="\${CHAT_ID}" \
         -d parse_mode="Markdown" \
-        -d text="\$1\n🌍 Сервер: \\`\${SERVER_IP}\\`" > /dev/null
+        -d text="\$1\nServer: \\\`\${SERVER_IP}\\\`" > /dev/null
 }
 
 timestamp() {
     date '+%Y-%m-%d %H:%M:%S'
 }
 
-echo "\$(timestamp) | 🚀 Проверка безопасности" >> "\$LOG_FILE"
+echo "\$(timestamp) | Проверка безопасности" >> "\$LOG_FILE"
 
 RKHUNTER_RESULT=\$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || true)
 if [ -n "\$RKHUNTER_RESULT" ]; then
-    send_telegram "⚠️ *RKHunter нашёл подозрительные элементы:*
-\\`\\`\\`
-\$RKHUNTER_RESULT
-\\`\\`\\`"
+    send_telegram "RKHunter обнаружил подозрительное:\n\\\`\\\`\n\$RKHUNTER_RESULT\n\\\`\\\`"
 else
-    send_telegram "✅ *RKHunter*: нарушений не обнаружено"
+    send_telegram "RKHunter: нарушений не обнаружено"
 fi
 
 PSAD_ALERTS=\$(grep "Danger level" /var/log/psad/alert | tail -n 5 || true)
 if echo "\$PSAD_ALERTS" | grep -q "Danger level"; then
-    send_telegram "🚨 *PSAD предупреждение:*
-\\`\\`\\`
-\$PSAD_ALERTS
-\\`\\`\\`"
+    send_telegram "PSAD предупреждение:\n\\\`\\\`\n\$PSAD_ALERTS\n\\\`\\\`"
 else
-    send_telegram "✅ *PSAD*: подозрительной активности не обнаружено"
+    send_telegram "PSAD: подозрительной активности не найдено"
 fi
 
-echo "\$(timestamp) | ✅ Проверка завершена" >> "\$LOG_FILE"
+echo "\$(timestamp) | Проверка завершена" >> "\$LOG_FILE"
 EOM
 
 install -m 755 /dev/stdin "/usr/local/bin/clear_security_log.sh" <<EOM
 #!/bin/bash
 LOG_FILE="/var/log/security_monitor.log"
-echo "\$(date '+%Y-%m-%d %H:%M:%S') | 🧹 Очистка лога безопасности" > "\$LOG_FILE"
+echo "\$(date '+%Y-%m-%d %H:%M:%S') | Очистка лога безопасности" > "\$LOG_FILE"
 EOM
 
 if \$USE_CRON; then
-  log "⏱ Добавляем cron-задачи"
+  log "Добавление cron-задач"
   (crontab -l 2>/dev/null; echo "$SECURITY_CRON /usr/local/bin/security_monitor.sh") | sort -u | crontab -
   (crontab -l 2>/dev/null; echo "$CLEAR_LOG_CRON /usr/local/bin/clear_security_log.sh") | sort -u | crontab -
 fi
 
-log "✅ Все компоненты безопасности установлены"
-send_telegram "✅ Защита сервера успешно настроена!"
+log "Безопасность настроена"
+send_telegram "Сервер защищён."
 EOF
 
-log "🚀 Запускаем secure_hardening.sh..."
-sudo "$SECURE_SCRIPT" "$@"
+log "Установка Netdata..."
+bash <(curl -Ss https://my-netdata.io/kickstart.sh) >> "$LOG_FILE" 2>&1
+log "Netdata установлена. Доступ: http://<ip>:19999"
 
-log "🏁 Установка завершена."
+log "Запускаем secure_hardening.sh..."
+"$SECURE_SCRIPT" "$@"
+
+log "Установка завершена."
