@@ -8,12 +8,12 @@ SECURE_SCRIPT="/usr/local/bin/secure_hardening.sh"
 LOG_FILE="/var/log/secure_setup.log"
 
 if ! command -v jq &>/dev/null; then
-  echo "❌ Требуется jq. Установите: sudo apt install jq -y"
+  echo "ERROR: Требуется jq. Установите: sudo apt install jq -y"
   exit 1
 fi
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
-  echo "❌ Не найден конфигурационный файл: $CONFIG_FILE"
+  echo "ERROR: Не найден конфигурационный файл: $CONFIG_FILE"
   exit 1
 fi
 
@@ -57,7 +57,7 @@ send_telegram() {
     curl -s -X POST "https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage" \
          -d chat_id="\${CHAT_ID}" \
          -d parse_mode="Markdown" \
-         -d text="\$1\nServer: \\\`\${SERVER_IP}\\\`" > /dev/null
+         -d text="\$1\nServer: \`\${SERVER_IP}\`" > /dev/null
 }
 
 log "Установка модулей безопасности"
@@ -118,53 +118,53 @@ send_telegram() {
     curl -s -X POST "https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage" \
         -d chat_id="\${CHAT_ID}" \
         -d parse_mode="Markdown" \
-        -d text="\$1\nServer: \\\`\${SERVER_IP}\\\`" > /dev/null
+        -d text="\$1\nServer: \`\${SERVER_IP}\`" > /dev/null
 }
 
 timestamp() {
     date '+%Y-%m-%d %H:%M:%S'
 }
 
-echo "\$(timestamp) | Проверка безопасности" >> "\$LOG_FILE"
+echo "\$(timestamp) | Security check started" >> "\$LOG_FILE"
 
 RKHUNTER_RESULT=\$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || true)
 if [ -n "\$RKHUNTER_RESULT" ]; then
-    send_telegram "RKHunter обнаружил подозрительное:\n\\\`\\\`\n\$RKHUNTER_RESULT\n\\\`\\\`"
+    send_telegram "RKHunter Warning:\n\`\`\`\n\$RKHUNTER_RESULT\n\`\`\`"
 else
-    send_telegram "RKHunter: нарушений не обнаружено"
+    send_telegram "RKHunter: OK — no threats found."
 fi
 
 PSAD_ALERTS=\$(grep "Danger level" /var/log/psad/alert | tail -n 5 || true)
 if echo "\$PSAD_ALERTS" | grep -q "Danger level"; then
-    send_telegram "PSAD предупреждение:\n\\\`\\\`\n\$PSAD_ALERTS\n\\\`\\\`"
+    send_telegram "PSAD Alert:\n\`\`\`\n\$PSAD_ALERTS\n\`\`\`"
 else
-    send_telegram "PSAD: подозрительной активности не найдено"
+    send_telegram "PSAD: No suspicious activity."
 fi
 
-echo "\$(timestamp) | Проверка завершена" >> "\$LOG_FILE"
+echo "\$(timestamp) | Security check finished" >> "\$LOG_FILE"
 EOM
 
 install -m 755 /dev/stdin "/usr/local/bin/clear_security_log.sh" <<EOM
 #!/bin/bash
 LOG_FILE="/var/log/security_monitor.log"
-echo "\$(date '+%Y-%m-%d %H:%M:%S') | Очистка лога безопасности" > "\$LOG_FILE"
+echo "\$(date '+%Y-%m-%d %H:%M:%S') | Log cleared" > "\$LOG_FILE"
 EOM
 
 if \$USE_CRON; then
-  log "Добавление cron-задач"
+  log "Настройка cron-задач"
   (crontab -l 2>/dev/null; echo "$SECURITY_CRON /usr/local/bin/security_monitor.sh") | sort -u | crontab -
   (crontab -l 2>/dev/null; echo "$CLEAR_LOG_CRON /usr/local/bin/clear_security_log.sh") | sort -u | crontab -
 fi
 
-log "Безопасность настроена"
-send_telegram "Сервер защищён."
+log "Установка безопасности завершена"
+send_telegram "Сервер успешно защищён."
 EOF
 
 log "Установка Netdata..."
-bash <(curl -Ss https://my-netdata.io/kickstart.sh) >> "$LOG_FILE" 2>&1
-log "Netdata установлена. Доступ: http://<ip>:19999"
+bash -c "$(curl -Ss https://my-netdata.io/kickstart.sh)" >> "$LOG_FILE" 2>&1
+log "Netdata установлена. Доступ по порту 19999"
 
-log "Запускаем secure_hardening.sh..."
+log "Запуск secure_hardening.sh..."
 "$SECURE_SCRIPT" "$@"
 
-log "Установка завершена."
+log "Готово!"
