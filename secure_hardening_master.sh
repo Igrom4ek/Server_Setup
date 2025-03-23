@@ -29,35 +29,35 @@ log() {
 
 log "Создаём $SECURE_SCRIPT..."
 
-install -m 755 /dev/stdin "$SECURE_SCRIPT" <<EOF
+install -m 755 /dev/stdin "$SECURE_SCRIPT" <<'EOF'
 #!/bin/bash
 set -e
 
 LOG_FILE="/var/log/secure_setup.log"
-BOT_TOKEN="$BOT_TOKEN"
-CHAT_ID="$CHAT_ID"
-SERVER_IP="$SERVER_IP"
+BOT_TOKEN="BOTTOKEN"
+CHAT_ID="CHATID"
+SERVER_IP="SERVERIP"
 
 USE_CRON=true
 USE_TELEGRAM=true
 
-for arg in "\$@"; do
-    case \$arg in
+for arg in "$@"; do
+    case $arg in
         --no-cron) USE_CRON=false ;;
         --telegram-off) USE_TELEGRAM=false ;;
     esac
 done
 
 log() {
-    echo "\$(date '+%Y-%m-%d %H:%M:%S') | \$1" | tee -a "\$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG_FILE"
 }
 
 send_telegram() {
-    [[ "\$USE_TELEGRAM" == false ]] && return
-    curl -s -X POST "https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage" \
-         -d chat_id="\${CHAT_ID}" \
+    [[ "$USE_TELEGRAM" == false ]] && return
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+         -d chat_id="${CHAT_ID}" \
          -d parse_mode="Markdown" \
-         -d text="\$1\nServer: \`\${SERVER_IP}\`" > /dev/null
+         -d text="$1\nServer: \`${SERVER_IP}\`" > /dev/null
 }
 
 log "Установка модулей безопасности"
@@ -107,58 +107,69 @@ cat > /etc/logrotate.d/security_monitor <<EOL
 }
 EOL
 
-install -m 755 /dev/stdin "/usr/local/bin/security_monitor.sh" <<EOM
+install -m 755 /dev/stdin "/usr/local/bin/security_monitor.sh" <<'EOM'
 #!/bin/bash
 LOG_FILE="/var/log/security_monitor.log"
-BOT_TOKEN="$BOT_TOKEN"
-CHAT_ID="$CHAT_ID"
-SERVER_IP="$SERVER_IP"
+BOT_TOKEN="BOTTOKEN"
+CHAT_ID="CHATID"
+SERVER_IP="SERVERIP"
 
 send_telegram() {
-    curl -s -X POST "https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage" \
-        -d chat_id="\${CHAT_ID}" \
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d chat_id="${CHAT_ID}" \
         -d parse_mode="Markdown" \
-        -d text="\$1\nServer: \`\${SERVER_IP}\`" > /dev/null
+        -d text="$1\nServer: \`${SERVER_IP}\`" > /dev/null
 }
 
 timestamp() {
     date '+%Y-%m-%d %H:%M:%S'
 }
 
-echo "\$(timestamp) | Security check started" >> "\$LOG_FILE"
+echo "$(timestamp) | Security check started" >> "$LOG_FILE"
 
-RKHUNTER_RESULT=\$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || true)
-if [ -n "\$RKHUNTER_RESULT" ]; then
-    send_telegram "RKHunter Warning:\n\`\`\`\n\$RKHUNTER_RESULT\n\`\`\`"
+RKHUNTER_RESULT=$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || true)
+if [ -n "$RKHUNTER_RESULT" ]; then
+    send_telegram "RKHunter Warning:\n\`\`\`\n$RKHUNTER_RESULT\n\`\`\`"
 else
     send_telegram "RKHunter: OK — no threats found."
 fi
 
-PSAD_ALERTS=\$(grep "Danger level" /var/log/psad/alert | tail -n 5 || true)
-if echo "\$PSAD_ALERTS" | grep -q "Danger level"; then
-    send_telegram "PSAD Alert:\n\`\`\`\n\$PSAD_ALERTS\n\`\`\`"
+PSAD_ALERTS=$(grep "Danger level" /var/log/psad/alert | tail -n 5 || true)
+if echo "$PSAD_ALERTS" | grep -q "Danger level"; then
+    send_telegram "PSAD Alert:\n\`\`\`\n$PSAD_ALERTS\n\`\`\`"
 else
     send_telegram "PSAD: No suspicious activity."
 fi
 
-echo "\$(timestamp) | Security check finished" >> "\$LOG_FILE"
+echo "$(timestamp) | Security check finished" >> "$LOG_FILE"
 EOM
 
-install -m 755 /dev/stdin "/usr/local/bin/clear_security_log.sh" <<EOM
+install -m 755 /dev/stdin "/usr/local/bin/clear_security_log.sh" <<'EOM'
 #!/bin/bash
 LOG_FILE="/var/log/security_monitor.log"
-echo "\$(date '+%Y-%m-%d %H:%M:%S') | Log cleared" > "\$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') | Log cleared" > "$LOG_FILE"
 EOM
 
-if \$USE_CRON; then
+if $USE_CRON; then
   log "Настройка cron-задач"
-  (crontab -l 2>/dev/null; echo "$SECURITY_CRON /usr/local/bin/security_monitor.sh") | sort -u | crontab -
-  (crontab -l 2>/dev/null; echo "$CLEAR_LOG_CRON /usr/local/bin/clear_security_log.sh") | sort -u | crontab -
+  TEMP_CRON=$(mktemp)
+  crontab -l > "$TEMP_CRON" 2>/dev/null || true
+  echo "SECURITY_CRON /usr/local/bin/security_monitor.sh" >> "$TEMP_CRON"
+  echo "CLEAR_LOG_CRON /usr/local/bin/clear_security_log.sh" >> "$TEMP_CRON"
+  sort -u "$TEMP_CRON" | crontab -
+  rm "$TEMP_CRON"
 fi
 
 log "Установка безопасности завершена"
 send_telegram "Сервер успешно защищён."
 EOF
+
+# Замена переменных в скрипте
+sed -i "s/BOTTOKEN/$BOT_TOKEN/g" "$SECURE_SCRIPT"
+sed -i "s/CHATID/$CHAT_ID/g" "$SECURE_SCRIPT"
+sed -i "s/SERVERIP/$SERVER_IP/g" "$SECURE_SCRIPT"
+sed -i "s/SECURITY_CRON/$SECURITY_CRON/g" "$SECURE_SCRIPT"
+sed -i "s/CLEAR_LOG_CRON/$CLEAR_LOG_CRON/g" "$SECURE_SCRIPT"
 
 log "Установка Netdata..."
 bash -c "$(curl -Ss https://my-netdata.io/kickstart.sh)" >> "$LOG_FILE" 2>&1
