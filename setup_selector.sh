@@ -4,6 +4,7 @@ CONFIG_FILE="/usr/local/bin/config.json"
 SCRIPT_DIR="/usr/local/bin"
 LOG_FILE="/var/log/setup_selector.log"
 SCRIPT_URL_BASE="https://raw.githubusercontent.com/Igrom4ek/Server_Setup/main"
+SCRIPTS_PATH="bin"  # <-- исправлено: путь к папке с мастер-скриптами и ключами
 
 log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG_FILE"
@@ -18,7 +19,7 @@ fi
 # Загрузка config.json, если отсутствует
 if [[ ! -f "$CONFIG_FILE" ]]; then
   log "📥 Загружаем config.json с GitHub..."
-  curl -fsSL "$SCRIPT_URL_BASE/config.json" -o "$CONFIG_FILE"
+  curl -fsSL "$SCRIPT_URL_BASE/$SCRIPTS_PATH/config.json" -o "$CONFIG_FILE"
   if [[ ! -f "$CONFIG_FILE" ]]; then
     log "❌ Не удалось загрузить config.json"
     exit 1
@@ -32,19 +33,39 @@ USERNAME=$(jq -r '.username // "igrom"' "$CONFIG_FILE")
 PORT=$(jq -r '.port // 5075' "$CONFIG_FILE")
 KEY_FILE=$(jq -r '.ssh_key_file // "/usr/local/bin/ssh_key.pub"' "$CONFIG_FILE")
 
-# Проверка ssh-ключа (если не найден — ручной ввод с валидацией)
+# Проверка SSH-ключа (загрузка или ввод вручную)
 if [[ ! -f "$KEY_FILE" ]]; then
   log "⚠️ SSH-ключ не найден: $KEY_FILE"
-  read -p "Введите SSH-публичный ключ вручную: " SSH_KEY
-  if [[ ! "$SSH_KEY" =~ ^ssh-(rsa|ed25519) ]]; then
-    echo "❌ Неверный формат SSH-ключа"
-    exit 1
+  if curl -fsSL "$SCRIPT_URL_BASE/$SCRIPTS_PATH/id_ed25519.pub" -o "$KEY_FILE"; then
+    chmod 644 "$KEY_FILE"
+    log "✅ SSH-ключ загружен из GitHub в $KEY_FILE"
+  else
+    read -p "Введите SSH-публичный ключ вручную: " SSH_KEY
+    if [[ ! "$SSH_KEY" =~ ^ssh-(rsa|ed25519) ]]; then
+      echo "❌ Неверный формат SSH-ключа"
+      exit 1
+    fi
+    echo "$SSH_KEY" > "$KEY_FILE"
+    chmod 644 "$KEY_FILE"
+    log "✅ SSH-ключ сохранён вручную в $KEY_FILE"
   fi
-  echo "$SSH_KEY" > "$KEY_FILE"
-  chmod 644 "$KEY_FILE"
-  log "✅ SSH-ключ сохранён в $KEY_FILE"
 fi
 
+# Загрузка мастер-скриптов
+for script in setup_server_master.sh secure_hardening_master.sh; do
+  if [[ ! -f "$SCRIPT_DIR/$script" ]]; then
+    log "📥 Загружаем $script из GitHub..."
+    if curl -fsSL "$SCRIPT_URL_BASE/$SCRIPTS_PATH/$script" -o "$SCRIPT_DIR/$script"; then
+      chmod +x "$SCRIPT_DIR/$script"
+      log "✅ $script успешно загружен"
+    else
+      log "❌ Ошибка загрузки $script — проверь путь или наличие файла в репозитории"
+      exit 1
+    fi
+  fi
+done
+
+# Меню выбора установки
 PS3="Выберите мастер-скрипт для установки: "
 options=(
   "1. Базовая установка сервера (setup_server_master.sh)"
@@ -74,3 +95,5 @@ do
       ;;
   esac
 done
+
+exit 0
