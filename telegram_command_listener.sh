@@ -4,8 +4,9 @@ CONFIG_FILE="/usr/local/bin/config.json"
 LOG_FILE="/var/log/security_monitor.log"
 LAST_UPDATE_FILE="/tmp/telegram_last_update_id"
 
-BOT_TOKEN=$(jq -r '.telegram_bot_token' "$CONFIG_FILE")
-CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG_FILE")
+CONFIG=$(jq -r . "$CONFIG_FILE")
+BOT_TOKEN=$(echo "$CONFIG" | jq -r '.telegram_bot_token')
+CHAT_ID=$(echo "$CONFIG" | jq -r '.telegram_chat_id')
 
 [[ -z "$BOT_TOKEN" || "$BOT_TOKEN" == "null" ]] && echo "❌ Нет токена бота" && exit 1
 
