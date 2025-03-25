@@ -1,80 +1,52 @@
 #!/bin/bash
 
-CONFIG="/usr/local/bin/config.json"
-UPDATE_FILE="/tmp/telegram_last_update_id"
-LOGFILE="/var/log/telegram_bot.log"
+# === telegram_command_listener.sh ===
+# Обновлённый скрипт Telegram-бота, отправляющего подробный отчёт rkhunter
 
-log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" >> "$LOGFILE"
-}
-
-get_config_value() {
-    jq -r "$1" "$CONFIG"
-}
+BOT_TOKEN="__REPLACE_WITH_YOUR_BOT_TOKEN__"
+CHAT_ID="__REPLACE_WITH_YOUR_CHAT_ID__"
+LOG_FILE="/var/log/telegram_bot.log"
+RKHUNTER_LOG="/var/log/rkhunter.log"
+TMP_LOG="/tmp/rkhunter_parsed.log"
 
 send_message() {
-    local message="$1"
-    curl -s -X POST https://api.telegram.org/bot"$BOT_TOKEN"/sendMessage \
-        -d chat_id="$CHAT_ID" \
-        -d text="$message" \
-        -d parse_mode="Markdown"
-}
-
-process_command() {
     local text="$1"
-    case "$text" in
-        "/status")
-            local uptime_msg
-            uptime_msg=$(uptime -p)
-            send_message "*✅ Статус:* Сервер работает\n_Аптайм:_ \`$uptime_msg\`"
-            ;;
-        "/help")
-            send_message "*📖 Доступные команды:*\n/status – Статус сервера\n/help – Помощь\n/log – Последние строки лога\n/security – Проверка безопасности"
-            ;;
-        "/log")
-            local tail_text
-            tail_text=$(tail -n 15 "$LOGFILE" 2>/dev/null)
-            send_message "*🪵 Последние строки лога:*\n\`\`\`\n$tail_text\n\`\`\`"
-            ;;
-        "/security")
-            local sec_check
-            sec_check=$(sudo rkhunter --check --sk 2>/dev/null | grep -E "Warning|Checking|OK")
-            send_message "*🛡 Безопасность:*\n\`\`\`\n$sec_check\n\`\`\`"
-            ;;
-        *)
-            send_message "🤖 Я тебя не понял. Напиши /help"
-            ;;
-    esac
+    curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
+        -d chat_id="$CHAT_ID" \
+        -d parse_mode="Markdown" \
+        --data-urlencode text="$text"
 }
 
-log "Telegram bot listener запущен"
+parse_rkhunter_log() {
+    echo "📋 *Отчёт RKHunter (`date +'%Y-%m-%d %H:%M:%S'`)*" > "$TMP_LOG"
 
-while true; do
-    if [[ ! -f "$CONFIG" ]]; then
-        log "❌ Не найден config.json"
+    grep -E 'Warning|Possible rootkits|[Ff]iles checked|Rootkits checked|Suspect files|Rootkit checks|Applications checks|System checks summary|Applications checks|File properties checks' "$RKHUNTER_LOG" >> "$TMP_LOG"
+
+    # Отправим лог ботом
+    send_message "\`cat $TMP_LOG\`"
+}
+
+main_loop() {
+    while true; do
+        echo "[2025-03-25 23:29:59] Telegram bot listener запущен" >> "$LOG_FILE"
+
+        # Получаем обновления от Telegram
+        UPDATES=$(curl -s https://api.telegram.org/bot$BOT_TOKEN/getUpdates)
+
+        # Обработка команды /security
+        if echo "$UPDATES" | grep -q "/security"; then
+            send_message "🔍 Запускаю проверку безопасности... Это может занять ~1 минуту."
+            echo "[2025-03-25 23:29:59] 📩 Получена команда: /security" >> "$LOG_FILE"
+
+            sudo rkhunter --update > /dev/null
+            sudo rkhunter --propupd > /dev/null
+            sudo rkhunter --check --sk > /dev/null
+
+            parse_rkhunter_log
+        fi
+
         sleep 10
-        continue
-    fi
+    done
+}
 
-    BOT_TOKEN=$(get_config_value '.telegram_bot_token')
-    CHAT_ID=$(get_config_value '.telegram_chat_id')
-    SERVER_LABEL=$(get_config_value '.telegram_server_label')
-
-    LAST_UPDATE_ID=$(cat "$UPDATE_FILE" 2>/dev/null || echo 0)
-
-    RESP=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates?offset=$((LAST_UPDATE_ID + 1))")
-    NEW_UPDATE_ID=$(echo "$RESP" | jq -r '.result[-1].update_id // empty')
-    MESSAGE_TEXT=$(echo "$RESP" | jq -r '.result[-1].message.text // empty')
-    SENDER_ID=$(echo "$RESP" | jq -r '.result[-1].message.chat.id // empty')
-
-    if [[ -n "$NEW_UPDATE_ID" ]]; then
-        echo "$NEW_UPDATE_ID" > "$UPDATE_FILE"
-    fi
-
-    if [[ -n "$MESSAGE_TEXT" && "$SENDER_ID" == "$CHAT_ID" ]]; then
-        log "📩 Получена команда: $MESSAGE_TEXT"
-        process_command "$MESSAGE_TEXT"
-    fi
-
-    sleep 5
-done
+main_loop
