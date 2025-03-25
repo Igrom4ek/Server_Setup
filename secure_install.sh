@@ -46,7 +46,7 @@ send() {
   curl -s -X POST "https://api.telegram.org/bot\$BOT_TOKEN/sendMessage" \
     -d chat_id="\$CHAT_ID" \
     -d parse_mode="Markdown" \
-    -d text="\$1%0A*Server:* \\\`\$LABEL\\\`" > /dev/null
+    -d text="\$1%0A*Server:* \\`\$LABEL\\`" > /dev/null
 }
 
 echo "\$(date '+%F %T') | Запуск проверки безопасности" >> "\$LOG"
@@ -90,6 +90,25 @@ curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
   -d text="$MESSAGE" > /dev/null
 EOF
 chmod +x /etc/profile.d/notify_login.sh
+
+# === Установка systemd сервиса telegram_command_listener ===
+cat > /etc/systemd/system/telegram_command_listener.service <<EOF
+[Unit]
+Description=Telegram Command Listener
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/telegram_command_listener.sh
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reexec
+systemctl daemon-reload
+systemctl enable --now telegram_command_listener.service
 
 # === Установка cron-задач ===
 TEMP_CRON=$(mktemp)
