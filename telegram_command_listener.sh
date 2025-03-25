@@ -1,92 +1,80 @@
 #!/bin/bash
 
-CONFIG_FILE="/usr/local/bin/config.json"
-LOG_FILE="/var/log/security_monitor.log"
-LAST_UPDATE_FILE="/tmp/telegram_last_update_id"
+CONFIG="/usr/local/bin/config.json"
+UPDATE_FILE="/tmp/telegram_last_update_id"
+LOGFILE="/var/log/telegram_bot.log"
 
-CONFIG=$(jq -r . "$CONFIG_FILE")
-BOT_TOKEN=$(echo "$CONFIG" | jq -r '.telegram_bot_token')
-CHAT_ID=$(echo "$CONFIG" | jq -r '.telegram_chat_id')
-
-[[ -z "$BOT_TOKEN" || "$BOT_TOKEN" == "null" ]] && echo "❌ Нет токена бота" && exit 1
-
-# Инициализация offset
-LAST_UPDATE_ID=$(cat "$LAST_UPDATE_FILE" 2>/dev/null || echo 0)
-
-# Отправка сообщения
-send() {
-  local TEXT="$1"
-  TEXT=${TEXT//$'\n'/%0A}  # заменяем \n на %0A для корректной отправки
-  curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-    -d chat_id="$CHAT_ID" \
-    -d parse_mode="Markdown" \
-    -d text="$TEXT" > /dev/null
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" >> "$LOGFILE"
 }
 
-# 🟢 Уведомление о запуске
-send "🟢 *Сервер запущен*%0AIP: $(hostname -I | awk '{print $1}')%0AИмя: $(hostname)%0AВремя: $(date '+%F %T')"
+get_config_value() {
+    jq -r "$1" "$CONFIG"
+}
 
-# Основной цикл
-while true; do
-  RESPONSE=$(curl -s --max-time 10 "https://api.telegram.org/bot$BOT_TOKEN/getUpdates?offset=$((LAST_UPDATE_ID + 1))&timeout=10")
+send_message() {
+    local message="$1"
+    curl -s -X POST https://api.telegram.org/bot"$BOT_TOKEN"/sendMessage \
+        -d chat_id="$CHAT_ID" \
+        -d text="$message" \
+        -d parse_mode="Markdown"
+}
 
-  # Проверка на валидный ответ
-  if ! echo "$RESPONSE" | jq -e .result > /dev/null 2>&1; then
-    echo "⚠️ Невалидный ответ от Telegram, жду 5 секунд..."
-    sleep 5
-    continue
-  fi
-
-  MESSAGES=$(echo "$RESPONSE" | jq -c '.result[]')
-
-  for MSG in $MESSAGES; do
-    UPDATE_ID=$(echo "$MSG" | jq -r '.update_id')
-    TEXT=$(echo "$MSG" | jq -r '.message.text')
-    USER_CHAT_ID=$(echo "$MSG" | jq -r '.message.chat.id')
-
-    # Обрабатываем только команды от нужного пользователя
-    if [[ "$USER_CHAT_ID" == "$CHAT_ID" ]]; then
-      case "$TEXT" in
-        /security)
-          send "🛡 *Запущена проверка безопасности...*%0AОжидайте, это может занять до 1 минуты."
-          bash /usr/local/bin/security_monitor.sh > /dev/null 2>&1
-          sleep 1
-          if [[ -f "$LOG_FILE" ]]; then
-            CONTENT=$(tail -n 30 "$LOG_FILE" | sed 's/%/%25/g; s/`/%60/g') # экранирование
-            send "📋 *Результат проверки:*%0A\`\`\`%0A$CONTENT%0A\`\`\`"
-          else
-            send "⚠️ Лог безопасности не найден."
-          fi
-          ;;
-
-        /status)
-          STATUS=$( (uptime; echo ""; free -h; echo ""; df -h /) )
-          STATUS_ESCAPED=$(echo "$STATUS" | sed 's/%/%25/g; s/`/%60/g')
-          send "🖥 *Статус сервера:*%0A\`\`\`%0A$STATUS_ESCAPED%0A\`\`\`"
-          ;;
-
-        /reboot)
-          send "🔄 Сервер перезагрузится через 5 секунд..."
-          sleep 5
-          sudo reboot
-          ;;
-
-        /help)
-          send "*Доступные команды:*%0A/help — помощь%0A/security — проверка%0A/status — статус%0A/reboot — перезагрузка"
-          ;;
-
+process_command() {
+    local text="$1"
+    case "$text" in
+        "/status")
+            local uptime_msg
+            uptime_msg=$(uptime -p)
+            send_message "*✅ Статус:* Сервер работает\n_Аптайм:_ \`$uptime_msg\`"
+            ;;
+        "/help")
+            send_message "*📖 Доступные команды:*\n/status – Статус сервера\n/help – Помощь\n/log – Последние строки лога\n/security – Проверка безопасности"
+            ;;
+        "/log")
+            local tail_text
+            tail_text=$(tail -n 15 "$LOGFILE" 2>/dev/null)
+            send_message "*🪵 Последние строки лога:*\n\`\`\`\n$tail_text\n\`\`\`"
+            ;;
+        "/security")
+            local sec_check
+            sec_check=$(sudo rkhunter --check --sk 2>/dev/null | grep -E "Warning|Checking|OK")
+            send_message "*🛡 Безопасность:*\n\`\`\`\n$sec_check\n\`\`\`"
+            ;;
         *)
-          send "🤖 Неизвестная команда. Введите /help"
-          ;;
-      esac
+            send_message "🤖 Я тебя не понял. Напиши /help"
+            ;;
+    esac
+}
+
+log "Telegram bot listener запущен"
+
+while true; do
+    if [[ ! -f "$CONFIG" ]]; then
+        log "❌ Не найден config.json"
+        sleep 10
+        continue
     fi
 
-    # ✅ Сохраняем offset после обработки
-    if [[ "$UPDATE_ID" =~ ^[0-9]+$ ]]; then
-      echo "$UPDATE_ID" > "$LAST_UPDATE_FILE"
-      LAST_UPDATE_ID="$UPDATE_ID"
-    fi
-  done
+    BOT_TOKEN=$(get_config_value '.telegram_bot_token')
+    CHAT_ID=$(get_config_value '.telegram_chat_id')
+    SERVER_LABEL=$(get_config_value '.telegram_server_label')
 
-  sleep 5
+    LAST_UPDATE_ID=$(cat "$UPDATE_FILE" 2>/dev/null || echo 0)
+
+    RESP=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates?offset=$((LAST_UPDATE_ID + 1))")
+    NEW_UPDATE_ID=$(echo "$RESP" | jq -r '.result[-1].update_id // empty')
+    MESSAGE_TEXT=$(echo "$RESP" | jq -r '.result[-1].message.text // empty')
+    SENDER_ID=$(echo "$RESP" | jq -r '.result[-1].message.chat.id // empty')
+
+    if [[ -n "$NEW_UPDATE_ID" ]]; then
+        echo "$NEW_UPDATE_ID" > "$UPDATE_FILE"
+    fi
+
+    if [[ -n "$MESSAGE_TEXT" && "$SENDER_ID" == "$CHAT_ID" ]]; then
+        log "📩 Получена команда: $MESSAGE_TEXT"
+        process_command "$MESSAGE_TEXT"
+    fi
+
+    sleep 5
 done
