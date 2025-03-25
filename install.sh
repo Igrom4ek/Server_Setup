@@ -18,7 +18,7 @@ log "🚀 Запуск установки сервера"
 
 # === 1. Обновление системы ===
 log "Обновляем систему..."
-apt update && apt dist-upgrade -y
+apt update && apt full-upgrade -y
 
 # === 2. Установка утилит ===
 log "Устанавливаем jq, curl, sudo..."
@@ -83,6 +83,8 @@ chmod 700 /root/.ssh
 chmod 600 /root/.ssh/authorized_keys
 
 # === 9. Настройка SSH ===
+SSHD="/etc/ssh/sshd_config"
+
 # === 9b. Настройка SSH (дополнительные параметры из config.json) ===
 DISABLE_ROOT=$(jq -r '.ssh_disable_root' "$CONFIG_FILE")
 PASS_AUTH=$(jq -r '.ssh_password_auth' "$CONFIG_FILE")
@@ -193,7 +195,7 @@ AUTO_UPDATE_CRON=$(jq -r '.auto_update_cron' "$CONFIG_FILE")
 cat > /usr/local/bin/auto_update.sh <<EOF
 #!/bin/bash
 echo "$(date '+%F %T') | Обновление системы" >> /var/log/auto_update.log
-apt update && apt upgrade -y >> /var/log/auto_update.log 2>&1
+apt update && apt full-upgrade -y >> /var/log/auto_update.log 2>&1
 EOF
 chmod +x /usr/local/bin/auto_update.sh
 (crontab -l 2>/dev/null; echo "$AUTO_UPDATE_CRON /usr/local/bin/auto_update.sh") | sort -u | crontab -
