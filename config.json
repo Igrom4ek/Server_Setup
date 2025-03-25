@@ -4,9 +4,9 @@
   "ssh_key_file": "/usr/local/bin/id_ed25519.pub",
   "log_file": "/var/log/setupv2.log",
   "security_log_file": "/var/log/security_monitor.log",
-  "sudo_nopasswd": true,
+  "sudo_nopasswd": false,
 
-  "ssh_disable_root": true,
+  "ssh_disable_root": false,
   "ssh_password_auth": false,
   "max_auth_tries": 3,
   "max_sessions": 2,
