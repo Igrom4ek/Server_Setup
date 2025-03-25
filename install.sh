@@ -83,6 +83,23 @@ chmod 700 /root/.ssh
 chmod 600 /root/.ssh/authorized_keys
 
 # === 9. Настройка SSH ===
+# === 9b. Настройка SSH (дополнительные параметры из config.json) ===
+DISABLE_ROOT=$(jq -r '.ssh_disable_root' "$CONFIG_FILE")
+PASS_AUTH=$(jq -r '.ssh_password_auth' "$CONFIG_FILE")
+MAX_AUTH=$(jq -r '.max_auth_tries' "$CONFIG_FILE")
+MAX_SESSIONS=$(jq -r '.max_sessions' "$CONFIG_FILE")
+LOGIN_GRACE=$(jq -r '.login_grace_time' "$CONFIG_FILE")
+
+[[ "$DISABLE_ROOT" == "true" ]] && sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" "$SSHD"
+[[ "$DISABLE_ROOT" == "false" ]] && sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin yes/" "$SSHD"
+
+[[ "$PASS_AUTH" == "true" ]] && sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication yes/" "$SSHD"
+[[ "$PASS_AUTH" == "false" ]] && sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" "$SSHD"
+
+sed -i "s/^#\?MaxAuthTries .*/MaxAuthTries $MAX_AUTH/" "$SSHD"
+sed -i "s/^#\?MaxSessions .*/MaxSessions $MAX_SESSIONS/" "$SSHD"
+sed -i "s/^#\?LoginGraceTime .*/LoginGraceTime $LOGIN_GRACE/" "$SSHD"
+
 log "Настройка SSH в /etc/ssh/sshd_config"
 
 SSHD="/etc/ssh/sshd_config"
@@ -170,6 +187,16 @@ chmod +x /usr/local/bin/clear_install_log.sh
 
 # Добавление в cron (суббота 04:00)
 (crontab -l 2>/dev/null; echo "0 4 * * 6 /usr/local/bin/clear_install_log.sh") | sort -u | crontab -
+
+# === 17. Автообновление системы через cron ===
+AUTO_UPDATE_CRON=$(jq -r '.auto_update_cron' "$CONFIG_FILE")
+cat > /usr/local/bin/auto_update.sh <<EOF
+#!/bin/bash
+echo "$(date '+%F %T') | Обновление системы" >> /var/log/auto_update.log
+apt update && apt upgrade -y >> /var/log/auto_update.log 2>&1
+EOF
+chmod +x /usr/local/bin/auto_update.sh
+(crontab -l 2>/dev/null; echo "$AUTO_UPDATE_CRON /usr/local/bin/auto_update.sh") | sort -u | crontab -
 # === 15. Финальное резюме ===
 log "=== 📋 Сводка установки ==="
 log "👤 Пользователь: $USERNAME"
