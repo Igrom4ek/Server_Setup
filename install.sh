@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
-# === install.sh ===
 export DEBIAN_FRONTEND=noninteractive
+
+# === install.sh ===
+# Подготовка системы, SSH, защита, Docker, Netdata
 
 REMOTE_URL="https://raw.githubusercontent.com/Igrom4ek/Server_Setup/main"
 CONFIG_FILE="/usr/local/bin/config.json"
@@ -20,11 +22,11 @@ log "🚀 Запуск установки сервера"
 log "Обновляем систему..."
 apt update && apt dist-upgrade -y
 
-# === 2. Установка базовых пакетов ===
-log "Устанавливаем необходимые пакеты..."
+# === 2. Установка утилит ===
+log "Устанавливаем jq, curl, sudo..."
 apt install -y jq curl sudo
 
-# === 3. Загрузка config.json и ключа ===
+# === 3. Загрузка config и ключа ===
 if [[ ! -f "$CONFIG_FILE" ]]; then
   log "Загружаем config.json..."
   curl -fsSL "$REMOTE_URL/config.json" -o "$CONFIG_FILE"
@@ -32,37 +34,30 @@ fi
 chmod 644 "$CONFIG_FILE"
 
 if [[ ! -f "$KEY_FILE" ]]; then
-  log "Загружаем id_ed25519.pub..."
+  log "Загружаем публичный ключ id_ed25519.pub..."
   curl -fsSL "$REMOTE_URL/id_ed25519.pub" -o "$KEY_FILE"
 fi
 chmod 644 "$KEY_FILE"
 
-# === 4. Извлечение параметров ===
-USERNAME=$(jq -r '.username // "igrom"' "$CONFIG_FILE")
-PORT=$(jq -r '.port // 5075' "$CONFIG_FILE")
-NOPASSWD=$(jq -r '.sudo_nopasswd // true' "$CONFIG_FILE")
+# === 4. Конфигурация из JSON ===
+USERNAME=$(jq -r '.username' "$CONFIG_FILE")
+PORT=$(jq -r '.port' "$CONFIG_FILE")
+NOPASSWD=$(jq -r '.sudo_nopasswd' "$CONFIG_FILE")
 
-log "Имя пользователя: $USERNAME, SSH порт: $PORT"
+log "Пользователь: $USERNAME | SSH-порт: $PORT"
 
 # === 5. Создание пользователя ===
 if id "$USERNAME" &>/dev/null; then
   log "Пользователь $USERNAME уже существует"
 else
-  log "Создаём пользователя $USERNAME..."
   adduser --disabled-password --gecos "" "$USERNAME"
   echo "$USERNAME:SecureP@ssw0rd" | chpasswd
   usermod -aG sudo "$USERNAME"
   [[ "$NOPASSWD" == "true" ]] && echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 fi
 
-# === 6. Настройка SSH ===
-log "Настройка SSH..."
-SSHD="/etc/ssh/sshd_config"
-sed -i "s/^#\?Port .*/Port $PORT/" "$SSHD"
-sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" "$SSHD"
-sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" "$SSHD"
-sed -i "s/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/" "$SSHD"
-sed -i "s/^#\?AuthorizedKeysFile .*/AuthorizedKeysFile .ssh\/authorized_keys/" "$SSHD"
+# === 6. Установка ключей SSH ===
+log "Установка SSH-ключей для $USERNAME и root"
 
 mkdir -p /home/$USERNAME/.ssh
 cp "$KEY_FILE" /home/$USERNAME/.ssh/authorized_keys
@@ -70,33 +65,53 @@ chmod 700 /home/$USERNAME/.ssh
 chmod 600 /home/$USERNAME/.ssh/authorized_keys
 chown -R "$USERNAME:$USERNAME" /home/$USERNAME/.ssh
 
+mkdir -p /root/.ssh
+cp "$KEY_FILE" /root/.ssh/authorized_keys
+chmod 700 /root/.ssh
+chmod 600 /root/.ssh/authorized_keys
+
+# === 7. Настройка SSH ===
+log "Настройка SSH в /etc/ssh/sshd_config"
+
+SSHD="/etc/ssh/sshd_config"
+sed -i "s/^#\?Port .*/Port $PORT/" "$SSHD"
+sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin prohibit-password/" "$SSHD"
+sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" "$SSHD"
+sed -i "s/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/" "$SSHD"
+sed -i "s|^#\?AuthorizedKeysFile .*|AuthorizedKeysFile .ssh/authorized_keys|" "$SSHD"
+
 systemctl restart ssh
 
-# === 7. Открытие порта ===
+# === 8. Открытие порта ===
 if command -v ufw &>/dev/null; then
+  log "Открываем порт $PORT через UFW..."
   ufw allow "$PORT"
   ufw --force enable
 else
   iptables -A INPUT -p tcp --dport "$PORT" -j ACCEPT
+  iptables-save > /etc/iptables.rules
 fi
 
-# === 8. Загрузка и запуск secure_install.sh ===
+# === 9. Загрузка и запуск secure_install.sh ===
 log "Загружаем secure_install.sh..."
 curl -fsSL "$REMOTE_URL/secure_install.sh" -o "$SECURE_SCRIPT"
 chmod +x "$SECURE_SCRIPT"
 bash "$SECURE_SCRIPT"
 
-# === 9. Установка Docker ===
+# === 10. Установка Docker ===
 if ! command -v docker &>/dev/null; then
   log "Устанавливаем Docker..."
   apt install -y docker.io
   systemctl enable --now docker
 else
-  log "Docker уже установлен. Проверяем обновления..."
-  apt install --only-upgrade -y docker.io
+  log "Docker уже установлен, проверка обновлений..."
+  apt install -y --only-upgrade docker.io
 fi
 
-# === 10. Запуск Netdata ===
+log "Добавляем $USERNAME в группу docker..."
+usermod -aG docker "$USERNAME"
+
+# === 11. Netdata ===
 if ! docker ps | grep -q netdata; then
   log "Запускаем Netdata в контейнере..."
   docker run -d --name netdata \
@@ -110,7 +125,8 @@ if ! docker ps | grep -q netdata; then
     --security-opt apparmor=unconfined \
     netdata/netdata
 else
-  log "Netdata уже работает."
+  log "Netdata уже работает"
 fi
 
-log "✅ Установка завершена. Подключайтесь по: ssh -p $PORT $USERNAME@YOUR_SERVER"
+log "✅ Установка завершена. Подключение: ssh -p $PORT $USERNAME@YOUR_SERVER_IP"
+log "🔐 Для root-доступа: ssh -p $PORT root@YOUR_SERVER_IP (только по ключу)"
