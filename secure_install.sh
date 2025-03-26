@@ -116,4 +116,4 @@ echo "$CLEAR_LOG_CRON /usr/local/bin/clear_security_log.sh" >> "${TEMP_CRON}.new
 crontab "${TEMP_CRON}.new"
 rm -f "$TEMP_CRON" "${TEMP_CRON}.new"
 
-log "✅ Защита настроена"
+log " Защита настроена"
