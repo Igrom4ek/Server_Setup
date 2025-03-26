@@ -1,5 +1,6 @@
 {
   "username": "igrom",
+  "user_password": "Unguryan@224911",
   "port": 5075,
   "ssh_key_file": "/usr/local/bin/id_ed25519.pub",
   "log_file": "/var/log/setupv2.log",
