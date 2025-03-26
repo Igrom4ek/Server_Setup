@@ -59,11 +59,8 @@ if [[ -z "$SKIP_PORT" ]]; then
   sudo sed -i "s|^#\?AuthorizedKeysFile .*|AuthorizedKeysFile .ssh/authorized_keys|" /etc/ssh/sshd_config
   sudo systemctl restart ssh
 fi
-fi
 
 # === Настройка SSH-конфигурации ===
-if [[ -z "$SKIP_PORT" ]]; then
-fi
 
 # === Отключение запроса пароля для sudo ===
 log "🔧 Настраиваем sudo без пароля"
