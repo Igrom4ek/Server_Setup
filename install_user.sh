@@ -51,16 +51,18 @@ if ss -tuln | grep -q ":$PORT"; then
     *) echo "Неверный выбор. Прерывание." ; exit 1 ;;
   esac
 fi
+if [[ -z "$SKIP_PORT" ]]; then
+  log "⚙️ Настраиваем /etc/ssh/sshd_config"
+  sudo sed -i "s/^#\?Port .*/Port $PORT/" /etc/ssh/sshd_config
+  sudo sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" /etc/ssh/sshd_config
+  sudo sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" /etc/ssh/sshd_config
+  sudo sed -i "s|^#\?AuthorizedKeysFile .*|AuthorizedKeysFile .ssh/authorized_keys|" /etc/ssh/sshd_config
+  sudo systemctl restart ssh
+fi
 fi
 
 # === Настройка SSH-конфигурации ===
-log "⚙️ Настраиваем /etc/ssh/sshd_config"
 if [[ -z "$SKIP_PORT" ]]; then
-  sudo sed -i "s/^#\?Port .*/Port $PORT/" /etc/ssh/sshd_config
-sudo sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" /etc/ssh/sshd_config
-sudo sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" /etc/ssh/sshd_config
-sudo sed -i "s|^#\?AuthorizedKeysFile .*|AuthorizedKeysFile .ssh/authorized_keys|" /etc/ssh/sshd_config
-  sudo systemctl restart ssh
 fi
 
 # === Отключение запроса пароля для sudo ===
