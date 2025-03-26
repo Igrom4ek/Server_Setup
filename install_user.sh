@@ -45,8 +45,6 @@ if ss -tuln | grep -q ":$PORT"; then
     *) echo "Неверный выбор. Прерывание." ; exit 1 ;;
   esac
 fi
-  log "❌ Порт $PORT уже используется. Укажи другой в config.json"
-  exit 1
 fi
 
 # === Настройка SSH-конфигурации ===
