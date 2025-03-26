@@ -15,9 +15,9 @@ log "🚀 Установка сервисов от пользователя $USE
 # === SSH: настройка authorized_keys ===
 log "🔐 Настраиваем .ssh"
 mkdir -p "$HOME/.ssh"
-chmod 700 "$HOME/.ssh"
+sudo chmod 700 "$HOME/.ssh"
 touch "$HOME/.ssh/authorized_keys"
-chmod 600 "$HOME/.ssh/authorized_keys"
+sudo chmod 600 "$HOME/.ssh/authorized_keys"
 cat "$KEY_FILE" >> "$HOME/.ssh/authorized_keys"
 
 # === Проверка порта ===
@@ -74,7 +74,7 @@ log "🛡 Настройка модулей безопасности..."
 for SERVICE in ufw fail2ban psad rkhunter; do
   if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
     log "Устанавливаем $SERVICE..."
-    apt install -y "$SERVICE"
+    sudo apt install -y "$SERVICE"
     [[ "$SERVICE" != "rkhunter" ]] && systemctl enable --now "$SERVICE" || true
   else
     log "$SERVICE отключён в config.json"
@@ -111,14 +111,14 @@ fi
 echo "\$(date '+%F %T') | Проверка завершена" >> "\$LOG"
 EOF
 
-chmod +x /usr/local/bin/security_monitor.sh
+sudo chmod +x /usr/local/bin/security_monitor.sh
 
 # === clear_security_log.sh ===
 cat > /usr/local/bin/clear_security_log.sh <<EOF
 
 echo "\$(date '+%F %T') | Очистка лога" > /var/log/security_monitor.log
 EOF
-chmod +x /usr/local/bin/clear_security_log.sh
+sudo chmod +x /usr/local/bin/clear_security_log.sh
 
 # === notify_login.sh (telegram) ===
 cat > /etc/profile.d/notify_login.sh <<'EOF'
@@ -136,7 +136,7 @@ curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
   -d parse_mode="Markdown" \
   -d text="$MESSAGE" > /dev/null
 EOF
-chmod +x /etc/profile.d/notify_login.sh
+sudo chmod +x /etc/profile.d/notify_login.sh
 
 # === Установка systemd сервиса telegram_command_listener ===
 cat > /etc/systemd/system/telegram_command_listener.service <<EOF
@@ -153,9 +153,9 @@ User=root
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reexec
-systemctl daemon-reload
-systemctl enable --now telegram_command_listener.service
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+sudo systemctl enable --now telegram_command_listener.service
 
 # === Установка cron-задач ===
 TEMP_CRON=$(mktemp)
@@ -229,7 +229,7 @@ main_loop
 
 EOF
 
-chmod +x /usr/local/bin/telegram_command_listener.sh
+sudo chmod +x /usr/local/bin/telegram_command_listener.sh
 
 log "🛠️ Настраиваем systemd-сервис для Telegram listener"
 cat > /etc/systemd/system/telegram_command_listener.service <<EOF
@@ -282,7 +282,7 @@ cat > /usr/local/bin/auto_update.sh <<EOF
 echo "$(date '+%F %T') | Обновление системы" >> /var/log/auto_update.log
 sudo apt update && sudo apt -o Dpkg::Options::="--force-confold" full-upgrade -y >> /var/log/auto_update.log 2>&1
 EOF
-chmod +x /usr/local/bin/auto_update.sh
+sudo chmod +x /usr/local/bin/auto_update.sh
 (crontab -l 2>/dev/null; echo "$AUTO_UPDATE_CRON /usr/local/bin/auto_update.sh") | sort -u | crontab -
 
 
