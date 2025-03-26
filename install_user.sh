@@ -7,7 +7,7 @@ log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG"
 }
 
-log "👤 [USER] Установка компонентов от имени $USER"
+log " [USER] Установка компонентов от имени $USER"
 
 REMOTE_URL="https://raw.githubusercontent.com/Igrom4ek/Server_Setup/main"
 CONFIG_FILE="/usr/local/bin/config.json"
@@ -86,14 +86,14 @@ chmod +x /usr/local/bin/auto_update.sh
 
 # === Резюме ===
 PORT=$(jq -r '.port' "$CONFIG_FILE")
-log "=== 📋 Установка завершена ==="
-log "🔐 Root доступ: отключён"
-log "🤖 Telegram-бот: активен"
-log "📊 Netdata: http://YOUR_SERVER_IP:19999"
-log "➡ Подключение: ssh -p $PORT $USER@YOUR_SERVER_IP"
+log "===  Установка завершена ==="
+log " Root доступ: отключён"
+log " Telegram-бот: активен"
+log " Netdata: http://YOUR_SERVER_IP:19999"
+log " Подключение: ssh -p $PORT $USER@YOUR_SERVER_IP"
 
 # === Финальная проверка установки ===
-log "📋 Загружаем и запускаем verify_install.sh..."
+log " Загружаем и запускаем verify_install.sh..."
 curl -fsSL https://raw.githubusercontent.com/Igrom4ek/Server_Setup/main/verify_install.sh -o /usr/local/bin/verify_install.sh
 chmod +x /usr/local/bin/verify_install.sh
 /usr/local/bin/verify_install.sh || true

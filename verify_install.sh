@@ -45,28 +45,8 @@ CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG")
 [[ "$BOT" != "null" && "$BOT" != "" ]] && echo "✅ Telegram токен задан" || echo "❌ Telegram токен пуст"
 [[ "$CHAT_ID" != "null" && "$CHAT_ID" != "" ]] && echo "✅ Telegram chat_id задан" || echo "❌ Telegram chat_id пуст"
 
-command -v nmap &>/dev/null && echo "✅ nmap установлен" || echo "❌ nmap не установлен"
-
 echo "--- 🔁 PSAD / RKHUNTER ---"
 [[ -f /var/log/psad/alert ]] && echo "✅ psad: лог alert найден" || echo "⚠️ psad лог не найден"
 command -v rkhunter &>/dev/null && echo "✅ rkhunter установлен" || echo "❌ rkhunter не установлен"
-
-
-echo "--- 🔑 Проверка SSH-настроек ---"
-SSHD="/etc/ssh/sshd_config"
-grep -q "^PubkeyAuthentication yes" "$SSHD" && echo "✅ PubkeyAuthentication включен" || echo "❌ PubkeyAuthentication отключен"
-grep -q "^PasswordAuthentication no" "$SSHD" && echo "✅ PasswordAuthentication отключен" || echo "❌ PasswordAuthentication разрешен"
-grep -q "^PermitRootLogin no" "$SSHD" && echo "✅ Root-вход запрещен" || echo "❌ Root-вход разрешен"
-
-echo "--- 🔐 Проверка sudo ---"
-[[ -f /etc/sudoers.d/90-$USERNAME ]] && echo "✅ sudo NOPASSWD настроен для $USERNAME" || echo "❌ sudo NOPASSWD не настроен"
-
-echo "--- 📡 Telegram listener ---"
-systemctl is-active telegram_command_listener.service &>/dev/null && echo "✅ Telegram listener активен" || echo "❌ Telegram listener не запущен"
-
-echo "--- 🔐 Проверка прав SSH-ключей ---"
-ls -ld /home/$USERNAME/.ssh
-ls -l /home/$USERNAME/.ssh/authorized_keys
-
 
 echo "--- ✅ Проверка завершена ---"

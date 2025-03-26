@@ -12,7 +12,7 @@ log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG"
 }
 
-log "🚀 [ROOT] Запуск установки сервера"
+log " [ROOT] Запуск установки сервера"
 
 apt clean && apt autoremove -y
 apt update && apt full-upgrade -y
