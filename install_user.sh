@@ -18,7 +18,9 @@ TELEGRAM_SCRIPT="/usr/local/bin/telegram_command_listener.sh"
 
 # === Безопасность ===
 log "Загружаем secure_install.sh..."
-sudo curl -fsSL "$REMOTE_URL/secure_install.sh" -o "$SECURE_SCRIPT"
+curl -fsSL "$REMOTE_URL/secure_install.sh" -o "/tmp/secure_install.sh"
+sudo mv /tmp/secure_install.sh "$SECURE_SCRIPT"
+sudo chmod +x "$SECURE_SCRIPT"
 chmod +x "$SECURE_SCRIPT"
 sudo bash "$SECURE_SCRIPT"
 
