@@ -14,26 +14,50 @@ log "🚀 Установка сервисов от пользователя $USE
 
 # === SSH: настройка authorized_keys ===
 log "🔐 Настраиваем .ssh"
-mkdir -p "$HOME/.ssh"
+if [[ ! -d "$HOME/.ssh" ]]; then
+  log "Создаём .ssh"
+  mkdir -p "$HOME/.ssh"
+else
+  log ".ssh уже существует, пропускаем создание"
+fi
 sudo chmod 700 "$HOME/.ssh"
-touch "$HOME/.ssh/authorized_keys"
+if [[ ! -f "$HOME/.ssh/authorized_keys" ]]; then
+  log "Создаём authorized_keys"
+  touch "$HOME/.ssh/authorized_keys"
+else
+  log "authorized_keys уже существует, пропускаем создание"
+fi
 sudo chmod 600 "$HOME/.ssh/authorized_keys"
 cat "$KEY_FILE" >> "$HOME/.ssh/authorized_keys"
 
 # === Проверка порта ===
 PORT=$(jq -r '.port' "$CONFIG_FILE")
 if ss -tuln | grep -q ":$PORT"; then
+  log "⚠️ Порт $PORT уже используется."
+  echo "  [1] Продолжить с этим портом"
+  echo "  [2] Ввести другой порт"
+  echo "  [3] Пропустить настройку порта"
+  read -p "Выберите действие [1-3]: " choice
+  case "$choice" in
+    1) log "Продолжаем с занятым портом (на свой страх и риск)" ;;
+    2) read -p "Введите новый порт: " PORT ;;
+    3) log "Пропускаем настройку порта" ; SKIP_PORT=1 ;;
+    *) echo "Неверный выбор. Прерывание." ; exit 1 ;;
+  esac
+fi
   log "❌ Порт $PORT уже используется. Укажи другой в config.json"
   exit 1
 fi
 
 # === Настройка SSH-конфигурации ===
 log "⚙️ Настраиваем /etc/ssh/sshd_config"
-sudo sed -i "s/^#\?Port .*/Port $PORT/" /etc/ssh/sshd_config
+if [[ -z "$SKIP_PORT" ]]; then
+  sudo sed -i "s/^#\?Port .*/Port $PORT/" /etc/ssh/sshd_config
 sudo sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" /etc/ssh/sshd_config
 sudo sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" /etc/ssh/sshd_config
 sudo sed -i "s|^#\?AuthorizedKeysFile .*|AuthorizedKeysFile .ssh/authorized_keys|" /etc/ssh/sshd_config
-sudo systemctl restart ssh
+  sudo systemctl restart ssh
+fi
 
 # === Отключение запроса пароля для sudo ===
 log "🔧 Настраиваем sudo без пароля"
