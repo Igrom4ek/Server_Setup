@@ -1,3 +1,8 @@
+if [[ -f "$HOME/install_user.sh" ]]; then
+  echo "⚠️ Найден старый файл install_user.sh. Удаляю..."
+  rm -f "$HOME/install_user.sh"
+fi
+
 #!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -31,6 +36,7 @@ sudo chmod 600 "$HOME/.ssh/authorized_keys"
 cat "$KEY_FILE" >> "$HOME/.ssh/authorized_keys"
 
 # === Проверка порта ===
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
 PORT=$(jq -r '.port' "$CONFIG_FILE")
 if ss -tuln | grep -q ":$PORT"; then
   log "⚠️ Порт $PORT уже используется."
@@ -84,19 +90,29 @@ log() {
 
 [[ ! -f "$CONFIG_FILE" ]] && echo "Файл $CONFIG_FILE не найден" && exit 1
 
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
 BOT_TOKEN=$(jq -r '.telegram_bot_token' "$CONFIG_FILE")
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
 CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG_FILE")
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
 LABEL=$(jq -r '.telegram_server_label' "$CONFIG_FILE")
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
 CLEAR_LOG_CRON=$(jq -r '.clear_logs_cron' "$CONFIG_FILE")
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
 SECURITY_CHECK_CRON=$(jq -r '.security_check_cron' "$CONFIG_FILE")
 
 log "🛡 Настройка модулей безопасности..."
 
 # Установка модулей (если включены)
 for SERVICE in ufw fail2ban psad rkhunter; do
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
   if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
     log "Устанавливаем $SERVICE..."
-    sudo apt install -y "$SERVICE"
+if ! dpkg -s "$SERVICE" &>/dev/null; then
+      sudo apt install -y "$SERVICE"
+else
+  log "Пакет(ы) уже установлены, пропускаем: sudo apt install -y "$SERVICE""
+fi
     [[ "$SERVICE" != "rkhunter" ]] && systemctl enable --now "$SERVICE" || true
   else
     log "$SERVICE отключён в config.json"
@@ -161,7 +177,8 @@ EOF
 sudo chmod +x /etc/profile.d/notify_login.sh
 
 # === Установка systemd сервиса telegram_command_listener ===
-cat > /etc/systemd/system/telegram_command_listener.service <<EOF
+if [[ ! -f /etc/systemd/system/telegram_command_listener.service ]]; then
+  cat > /etc/systemd/system/telegram_command_listener.service <<EOF
 [Unit]
 Description=Telegram Command Listener
 After=network.target
@@ -177,7 +194,11 @@ EOF
 
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
-sudo systemctl enable --now telegram_command_listener.service
+if ! systemctl is-enabled telegram_command_listener.service &>/dev/null; then
+  sudo systemctl enable --now telegram_command_listener.service
+else
+  log "Сервис telegram_command_listener.service уже активен, пропускаем"
+fi
 
 # === Установка cron-задач ===
 TEMP_CRON=$(mktemp)
@@ -192,7 +213,9 @@ log "✅ Безопасность настроена успешно"
 
 log "📦 Устанавливаем Telegram listener"
 
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
 BOT_TOKEN=$(jq -r '.telegram_bot_token' "$CONFIG_FILE")
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
 CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG_FILE")
 
 cat > /usr/local/bin/telegram_command_listener.sh <<'EOF'
@@ -254,7 +277,8 @@ EOF
 sudo chmod +x /usr/local/bin/telegram_command_listener.sh
 
 log "🛠️ Настраиваем systemd-сервис для Telegram listener"
-cat > /etc/systemd/system/telegram_command_listener.service <<EOF
+if [[ ! -f /etc/systemd/system/telegram_command_listener.service ]]; then
+  cat > /etc/systemd/system/telegram_command_listener.service <<EOF
 [Unit]
 Description=Telegram Command Listener
 After=network.target
@@ -270,21 +294,37 @@ EOF
 
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
-sudo systemctl enable --now telegram_command_listener.service
+if ! systemctl is-enabled telegram_command_listener.service &>/dev/null; then
+  sudo systemctl enable --now telegram_command_listener.service
+else
+  log "Сервис telegram_command_listener.service уже активен, пропускаем"
+fi
 
 
 
 log "🐳 Устанавливаем Docker"
 if ! command -v docker &>/dev/null; then
-  sudo apt install -y docker.io
-  sudo systemctl enable --now docker
+if ! dpkg -s docker.io &>/dev/null; then
+    sudo apt install -y docker.io
+else
+  log "Пакет(ы) уже установлены, пропускаем: sudo apt install -y docker.io"
+fi
+if ! systemctl is-enabled docker &>/dev/null; then
+    sudo systemctl enable --now docker
+else
+  log "Сервис docker уже активен, пропускаем"
+fi
 fi
 sudo usermod -aG docker "$USER"
 
 
 log "📊 Устанавливаем Netdata (если не работает)"
 if ! docker ps | grep -q netdata; then
-  docker run -d --name netdata \
+if ! docker ps | grep -q netdata; then
+    docker run -d --name netdata \
+else
+  log "Netdata уже запущен, пропускаем"
+fi
     -p 19999:19999 \
     -v /etc/netdata:/etc/netdata:ro \
     -v /var/lib/netdata:/var/lib/netdata \
@@ -298,14 +338,21 @@ fi
 
 
 log "⏱ Настраиваем автообновление"
+if ! command -v jq &>/dev/null; then echo '❌ Требуется jq. Установите вручную.'; exit 1; fi
 AUTO_UPDATE_CRON=$(jq -r '.cron_tasks.auto_update' "$CONFIG_FILE")
-cat > /usr/local/bin/auto_update.sh <<EOF
+if [[ ! -f /usr/local/bin/auto_update.sh ]]; then
+  cat > /usr/local/bin/auto_update.sh <<EOF
 #!/bin/bash
 echo "$(date '+%F %T') | Обновление системы" >> /var/log/auto_update.log
 sudo apt update && sudo apt -o Dpkg::Options::="--force-confold" full-upgrade -y >> /var/log/auto_update.log 2>&1
 EOF
+fi
 sudo chmod +x /usr/local/bin/auto_update.sh
-(crontab -l 2>/dev/null; echo "$AUTO_UPDATE_CRON /usr/local/bin/auto_update.sh") | sort -u | crontab -
+if ! crontab -l 2>/dev/null | grep -q '/usr/local/bin/auto_update.sh'; then
+  (crontab -l 2>/dev/null; echo "$AUTO_UPDATE_CRON /usr/local/bin/auto_update.sh") | sort -u | crontab -
+else
+  log "Cron-задача auto_update уже существует, пропускаем"
+fi
 
 
 log "✅ Проверяем систему"
@@ -315,3 +362,6 @@ bash /tmp/verify.sh || true
 
 log "🧹 Удаляем install_user.sh"
 rm -- "$0"
+
+log "🧹 Удаляем install_user.sh (если запущен из файла)"
+[[ -f "$0" && "$0" == "$HOME/install_user.sh" ]] && rm -f "$0"
