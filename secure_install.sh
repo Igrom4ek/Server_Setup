@@ -21,7 +21,7 @@ LABEL=$(jq -r '.telegram_server_label' "$CONFIG_FILE")
 CLEAR_LOG_CRON=$(jq -r '.clear_logs_cron' "$CONFIG_FILE")
 SECURITY_CHECK_CRON=$(jq -r '.security_check_cron' "$CONFIG_FILE")
 
-log "🛡 Настройка модулей безопасности..."
+log " Настройка модулей безопасности..."
 
 # Установка модулей (если включены)
 for SERVICE in ufw fail2ban psad rkhunter; do
@@ -53,12 +53,12 @@ echo "\$(date '+%F %T') | Запуск проверки безопасности
 
 if command -v rkhunter &>/dev/null; then
   RKHUNTER_RESULT=\$(rkhunter --configfile /etc/rkhunter.conf --check --sk --nocolors --rwo 2>/dev/null || true)
-  [[ -n "\$RKHUNTER_RESULT" ]] && send "⚠️ *RKHunter нашёл подозрения:*%0A\`\`\`\$RKHUNTER_RESULT\`\`\`"
+  [[ -n "\$RKHUNTER_RESULT" ]] && send " *RKHunter нашёл подозрения:*%0A\`\`\`\$RKHUNTER_RESULT\`\`\`"
 fi
 
 if command -v psad &>/dev/null; then
   PSAD_RESULT=\$(grep "Danger level" /var/log/psad/alert | tail -n 5 || true)
-  [[ -n "\$PSAD_RESULT" ]] && send "🚨 *PSAD предупреждение:*%0A\`\`\`\$PSAD_RESULT\`\`\`"
+  [[ -n "\$PSAD_RESULT" ]] && send " *PSAD предупреждение:*%0A\`\`\`\$PSAD_RESULT\`\`\`"
 fi
 
 echo "\$(date '+%F %T') | Проверка завершена" >> "\$LOG"
@@ -83,7 +83,7 @@ USER_NAME=$(whoami)
 IP_ADDR=$(who | awk '{print $5}' | sed 's/[()]//g')
 HOSTNAME=$(hostname)
 LOGIN_TIME=$(date "+%Y-%m-%d %H:%M:%S")
-MESSAGE="👤 SSH вход: *$USER_NAME*%0A💻 $HOSTNAME%0A🕒 $LOGIN_TIME%0A🌐 IP: \`$IP_ADDR\`%0A*Server:* \`$LABEL\`"
+MESSAGE=" SSH вход: *$USER_NAME*%0A $HOSTNAME%0A $LOGIN_TIME%0A IP: \`$IP_ADDR\`%0A*Server:* \`$LABEL\`"
 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
   -d chat_id="$CHAT_ID" \
   -d parse_mode="Markdown" \
@@ -119,4 +119,4 @@ echo "$CLEAR_LOG_CRON /usr/local/bin/clear_security_log.sh" >> "${TEMP_CRON}.new
 crontab "${TEMP_CRON}.new"
 rm -f "$TEMP_CRON" "${TEMP_CRON}.new"
 
-log "✅ Безопасность настроена успешно"
+log " Безопасность настроена успешно"

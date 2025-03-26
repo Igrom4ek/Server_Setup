@@ -18,7 +18,7 @@ send_message() {
 }
 
 parse_rkhunter_log() {
-    echo "📋 *Отчёт RKHunter (`date +'%Y-%m-%d %H:%M:%S'`)*" > "$TMP_LOG"
+    echo " *Отчёт RKHunter (`date +'%Y-%m-%d %H:%M:%S'`)*" > "$TMP_LOG"
 
     grep -E 'Warning|Possible rootkits|[Ff]iles checked|Rootkits checked|Suspect files|Rootkit checks|Applications checks|System checks summary|Applications checks|File properties checks' "$RKHUNTER_LOG" >> "$TMP_LOG"
 
@@ -35,8 +35,8 @@ main_loop() {
 
         # Обработка команды /security
         if echo "$UPDATES" | grep -q "/security"; then
-            send_message "🔍 Запускаю проверку безопасности... Это может занять ~1 минуту."
-            echo "[2025-03-25 23:29:59] 📩 Получена команда: /security" >> "$LOG_FILE"
+            send_message " Запускаю проверку безопасности... Это может занять ~1 минуту."
+            echo "[2025-03-25 23:29:59]  Получена команда: /security" >> "$LOG_FILE"
 
             sudo rkhunter --update > /dev/null
             sudo rkhunter --propupd > /dev/null
