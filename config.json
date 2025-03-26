@@ -31,9 +31,10 @@
   },
 
   "services": {
-    "ufw": true,
-    "fail2ban": true,
-    "psad": true,
-    "rkhunter": true
+  "ufw": true,
+  "fail2ban": true,
+  "psad": true,
+  "rkhunter": true,
+  "nmap": true
   }
 }

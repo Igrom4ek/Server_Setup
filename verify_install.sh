@@ -45,6 +45,8 @@ CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG")
 [[ "$BOT" != "null" && "$BOT" != "" ]] && echo "✅ Telegram токен задан" || echo "❌ Telegram токен пуст"
 [[ "$CHAT_ID" != "null" && "$CHAT_ID" != "" ]] && echo "✅ Telegram chat_id задан" || echo "❌ Telegram chat_id пуст"
 
+command -v nmap &>/dev/null && echo "✅ nmap установлен" || echo "❌ nmap не установлен"
+
 echo "--- 🔁 PSAD / RKHUNTER ---"
 [[ -f /var/log/psad/alert ]] && echo "✅ psad: лог alert найден" || echo "⚠️ psad лог не найден"
 command -v rkhunter &>/dev/null && echo "✅ rkhunter установлен" || echo "❌ rkhunter не установлен"
