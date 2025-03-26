@@ -99,11 +99,13 @@ SECURE_SCRIPT="/usr/local/bin/# встроенная secure_install
   log " Настройка модулей безопасности..."
   
   # Установка модулей (если включены)
-  for SERVICE in ufw fail2ban psad rkhunter; do
+  for SERVICE in ufw fail2ban psad rkhunter nmap; do
     if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
       log "Устанавливаем $SERVICE..."
       apt install -y "$SERVICE"
-      [[ "$SERVICE" != "rkhunter" ]] && systemctl enable --now "$SERVICE" || true
+      if dpkg -s "$SERVICE" &>/dev/null && [[ "$SERVICE" != "rkhunter" ]]; then
+      systemctl enable --now "$SERVICE"
+    fi
     else
       log "$SERVICE отключён в config.json"
     fi
@@ -230,11 +232,13 @@ TELEGRAM_SCRIPT="/usr/local/bin/telegram_command_listener.sh"
   log " Настройка модулей безопасности..."
   
   # Установка модулей (если включены)
-  for SERVICE in ufw fail2ban psad rkhunter; do
+  for SERVICE in ufw fail2ban psad rkhunter nmap; do
     if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
       log "Устанавливаем $SERVICE..."
       apt install -y "$SERVICE"
-      [[ "$SERVICE" != "rkhunter" ]] && systemctl enable --now "$SERVICE" || true
+      if dpkg -s "$SERVICE" &>/dev/null && [[ "$SERVICE" != "rkhunter" ]]; then
+      systemctl enable --now "$SERVICE"
+    fi
     else
       log "$SERVICE отключён в config.json"
     fi
@@ -379,6 +383,11 @@ cat > /usr/local/bin/clear_install_log.sh <<EOF
 #!/bin/bash
 echo "$(date '+%F %T') | Очистка install лога" > /var/log/server_install.log
 EOF
+# создаём clear_install_log.sh перед назначением прав
+cat > /usr/local/bin/clear_install_log.sh <<EOF
+#!/bin/bash
+echo "$(date '+%F %T') | Очистка install лога" > /var/log/server_install.log
+EOF
 chmod +x /usr/local/bin/clear_install_log.sh
 (crontab -l 2>/dev/null; echo "0 4 * * 6 /usr/local/bin/clear_install_log.sh") | sort -u | crontab -
 
@@ -433,11 +442,13 @@ chmod +x /usr/local/bin/verify_install.sh
   log " Настройка модулей безопасности..."
   
   # Установка модулей (если включены)
-  for SERVICE in ufw fail2ban psad rkhunter; do
+  for SERVICE in ufw fail2ban psad rkhunter nmap; do
     if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
       log "Устанавливаем $SERVICE..."
       apt install -y "$SERVICE"
-      [[ "$SERVICE" != "rkhunter" ]] && systemctl enable --now "$SERVICE" || true
+      if dpkg -s "$SERVICE" &>/dev/null && [[ "$SERVICE" != "rkhunter" ]]; then
+      systemctl enable --now "$SERVICE"
+    fi
     else
       log "$SERVICE отключён в config.json"
     fi
@@ -562,11 +573,13 @@ sudo -i -u "$USERNAME" bash /home/$USERNAME/install_user.sh
   log " Настройка модулей безопасности..."
   
   # Установка модулей (если включены)
-  for SERVICE in ufw fail2ban psad rkhunter; do
+  for SERVICE in ufw fail2ban psad rkhunter nmap; do
     if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
       log "Устанавливаем $SERVICE..."
       apt install -y "$SERVICE"
-      [[ "$SERVICE" != "rkhunter" ]] && systemctl enable --now "$SERVICE" || true
+      if dpkg -s "$SERVICE" &>/dev/null && [[ "$SERVICE" != "rkhunter" ]]; then
+      systemctl enable --now "$SERVICE"
+    fi
     else
       log "$SERVICE отключён в config.json"
     fi
@@ -683,11 +696,13 @@ sudo -i -u "$USERNAME" bash /home/$USERNAME/install_user.sh.sh ===
   log " Настройка модулей безопасности..."
   
   # Установка модулей (если включены)
-  for SERVICE in ufw fail2ban psad rkhunter; do
+  for SERVICE in ufw fail2ban psad rkhunter nmap; do
     if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
       log "Устанавливаем $SERVICE..."
       apt install -y "$SERVICE"
-      [[ "$SERVICE" != "rkhunter" ]] && systemctl enable --now "$SERVICE" || true
+      if dpkg -s "$SERVICE" &>/dev/null && [[ "$SERVICE" != "rkhunter" ]]; then
+      systemctl enable --now "$SERVICE"
+    fi
     else
       log "$SERVICE отключён в config.json"
     fi
@@ -802,11 +817,13 @@ sudo -i -u "$USERNAME" bash /home/$USERNAME/install_user.sh.sh ===
   log " Настройка модулей безопасности..."
   
   # Установка модулей (если включены)
-  for SERVICE in ufw fail2ban psad rkhunter; do
+  for SERVICE in ufw fail2ban psad rkhunter nmap; do
     if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
       log "Устанавливаем $SERVICE..."
       apt install -y "$SERVICE"
-      [[ "$SERVICE" != "rkhunter" ]] && systemctl enable --now "$SERVICE" || true
+      if dpkg -s "$SERVICE" &>/dev/null && [[ "$SERVICE" != "rkhunter" ]]; then
+      systemctl enable --now "$SERVICE"
+    fi
     else
       log "$SERVICE отключён в config.json"
     fi
