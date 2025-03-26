@@ -15,8 +15,8 @@ log() {
 log "[ROOT] Старт установки"
 
 # === Обновление и подготовка ===
-apt update && apt full-upgrade -y
-apt install -y jq curl sudo
+apt update && apt -o Dpkg::Options::="--force-confold" full-upgrade -y
+apt -o Dpkg::Options::="--force-confold" install -y jq curl sudo
 
 # === Загрузка конфигов и ключа ===
 curl -fsSL "$REMOTE_URL/config.json" -o "$CONFIG_FILE"
@@ -74,19 +74,14 @@ TELEGRAM_SCRIPT="/usr/local/bin/telegram_command_listener.sh"
 # === Перезапуск SSH не требуется, т.к. это делает root ===
 
 # === Безопасность ===
-log "Загружаем secure_install.sh..."
-curl -fsSL "$REMOTE_URL/secure_install.sh" -o "/tmp/secure_install.sh"
-sudo mv /tmp/secure_install.sh "$SECURE_SCRIPT"
-sudo chmod +x "$SECURE_SCRIPT"
-chmod +x "$SECURE_SCRIPT"
-sudo bash "$SECURE_SCRIPT"
+secure_install
 
 # === Telegram-бот ===
 if pgrep -f telegram_command_listener.sh > /dev/null; then
   log "Telegram-бот уже запущен"
 else
   log "Устанавливаем Telegram-бота..."
-  curl -fsSL "$REMOTE_URL/telegram_command_listener.sh" -o "$TELEGRAM_SCRIPT"
+  cp /usr/local/bin/telegram_command_listener.sh "$TELEGRAM_SCRIPT"
   chmod +x "$TELEGRAM_SCRIPT"
   echo "0" > /tmp/telegram_last_update_id
   nohup "$TELEGRAM_SCRIPT" > /var/log/telegram_bot.log 2>&1 &
@@ -95,11 +90,11 @@ fi
 # === Docker (проверка и установка) ===
 if ! command -v docker &>/dev/null; then
   log "Устанавливаем Docker..."
-  sudo apt install -y docker.io
+  sudo apt -o Dpkg::Options::="--force-confold" install -y docker.io
   sudo systemctl enable --now docker
 else
   log "Docker уже установлен, проверка обновлений..."
-  sudo apt install -y --only-upgrade docker.io
+  sudo apt -o Dpkg::Options::="--force-confold" install -y --only-upgrade docker.io
 fi
 
 log "Добавляем пользователя $USER в группу docker..."
@@ -136,7 +131,7 @@ AUTO_UPDATE_CRON=$(jq -r '.auto_update_cron' "$CONFIG_FILE")
 cat > /usr/local/bin/auto_update.sh <<EOF
 #!/bin/bash
 echo "$(date '+%F %T') | Обновление системы" >> /var/log/auto_update.log
-sudo apt update && sudo apt full-upgrade -y >> /var/log/auto_update.log 2>&1
+sudo apt update && sudo apt -o Dpkg::Options::="--force-confold" full-upgrade -y >> /var/log/auto_update.log 2>&1
 EOF
 chmod +x /usr/local/bin/auto_update.sh
 (crontab -l 2>/dev/null; echo "$AUTO_UPDATE_CRON /usr/local/bin/auto_update.sh") | sort -u | crontab -
@@ -194,7 +189,7 @@ log " Настройка модулей безопасности..."
 for SERVICE in ufw fail2ban psad rkhunter; do
   if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
     log "Устанавливаем $SERVICE..."
-    apt install -y "$SERVICE"
+    apt -o Dpkg::Options::="--force-confold" install -y "$SERVICE"
     [[ "$SERVICE" != "rkhunter" ]] && systemctl enable --now "$SERVICE" || true
   else
     log "$SERVICE отключён в config.json"
