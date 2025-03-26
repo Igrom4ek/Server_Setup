@@ -24,9 +24,11 @@
   "monitoring_enabled": true,
   "monitoring_tool": "netdata",
 
-  "clear_logs_cron": "0 5 * * 0",
-  "security_check_cron": "0 6 * * *",
-  "auto_update_cron": "0 3 * * *",
+  "cron_tasks": {
+    "clear_logs": "0 5 * * 0",
+    "security_check": "0 6 * * *",
+    "auto_update": "0 3 * * *"
+  },
 
   "services": {
     "ufw": true,
