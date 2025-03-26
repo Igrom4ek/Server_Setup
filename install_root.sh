@@ -39,6 +39,20 @@ fi
 log "Добавляем $USERNAME в группы"
 usermod -aG sudo,docker,adm,systemd-journal,syslog "$USERNAME"
 
+
+# === Включаем NOPASSWD для пользователя ===
+echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-$USERNAME
+chmod 440 /etc/sudoers.d/90-$USERNAME
+
+# === Настраиваем SSH ===
+SSHD="/etc/ssh/sshd_config"
+sed -i "s/^#\?Port .*/Port $PORT/" "$SSHD"
+sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" "$SSHD"
+sed -i "s/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/" "$SSHD"
+sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" "$SSHD"
+systemctl restart ssh
+
+
 log "Создаём .ssh и копируем ключ"
 sudo -i -u "$USERNAME" bash <<EOF
 mkdir -p ~/.ssh
