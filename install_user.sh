@@ -17,6 +17,23 @@ log() {
 
 log "🚀 Установка сервисов от пользователя $USER"
 
+log "🔒 Отключаем запрос пароля polkit для группы sudo"
+if [[ ! -f /etc/polkit-1/rules.d/49-nopasswd.rules ]]; then
+  sudo mkdir -p /etc/polkit-1/rules.d
+  cat <<EOF | sudo tee /etc/polkit-1/rules.d/49-nopasswd.rules > /dev/null
+polkit.addRule(function(action, subject) {
+  if (subject.isInGroup("sudo")) {
+    return polkit.Result.YES;
+  }
+});
+EOF
+  sudo systemctl daemon-reexec
+  log "✅ Политика polkit обновлена"
+else
+  log "🔁 Политика polkit уже применена"
+fi
+
+
 # === SSH: настройка authorized_keys ===
 log "🔐 Настраиваем .ssh"
 if [[ ! -d "$HOME/.ssh" ]]; then
@@ -66,21 +83,6 @@ fi
 log "🔧 Настраиваем sudo без пароля"
 echo "$USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/90-$USER > /dev/null
 sudo chmod 440 /etc/sudoers.d/90-$USER
-log "🔒 Отключаем запрос пароля polkit для группы sudo"
-if [[ ! -f /etc/polkit-1/rules.d/49-nopasswd.rules ]]; then
-  sudo mkdir -p /etc/polkit-1/rules.d
-  cat <<EOF | sudo tee /etc/polkit-1/rules.d/49-nopasswd.rules > /dev/null
-polkit.addRule(function(action, subject) {
-  if (subject.isInGroup("sudo")) {
-    return polkit.Result.YES;
-  }
-});
-EOF
-  sudo systemctl daemon-reexec
-  log "✅ Политика polkit обновлена"
-else
-  log "🔁 Политика polkit уже применена"
-fi
 
 
 
