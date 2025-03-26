@@ -31,6 +31,30 @@ adduser --disabled-password --gecos "" "$USERNAME"
 echo "$USERNAME:$PASSWORD" | chpasswd
 usermod -aG sudo,adm,systemd-journal,syslog,docker "$USERNAME"
 
+log "🔒 Отключаем запрос пароля polkit для группы sudo"
+# Удаляем старые polkit-правила
+if [[ -f /etc/polkit-1/rules.d/49-nopasswd.rules ]]; then
+  sudo rm -f /etc/polkit-1/rules.d/49-nopasswd.rules
+  log "Удалены старые правила polkit"
+fi
+
+# Создаём новые правила для sudo
+sudo mkdir -p /etc/polkit-1/rules.d
+cat <<EOF | sudo tee /etc/polkit-1/rules.d/49-nopasswd.rules > /dev/null
+polkit.addRule(function(action, subject) {
+  if (subject.isInGroup("sudo")) {
+    return polkit.Result.YES;
+  }
+});
+EOF
+sudo systemctl daemon-reexec
+log "✅ Политика polkit обновлена"
+
+# Настройка sudo без пароля
+echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/90-$USERNAME > /dev/null
+sudo chmod 440 /etc/sudoers.d/90-$USERNAME
+log "🔧 Настроено sudo без пароля для пользователя $USERNAME"
+
 log "✅ Пользователь создан. Теперь войдите под $USERNAME и выполните install_user.sh"
 echo
 echo "  su - $USERNAME"
