@@ -2,6 +2,8 @@
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
+REAL_USER=$(logname)
+
 if [[ $EUID -ne 0 ]]; then
   echo "❌ Скрипт должен быть запущен с sudo!"
   exit 1
@@ -15,7 +17,7 @@ log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG"
 }
 
-log "== Установка сервисов от пользователя $USER =="
+log "== Установка сервисов от пользователя $REAL_USER =="
 
 BOT_TOKEN=$(jq -r '.telegram_bot_token' "$CONFIG_FILE")
 CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG_FILE")
@@ -26,7 +28,7 @@ MONITORING_ENABLED=$(jq -r '.monitoring_enabled' "$CONFIG_FILE")
 
 log "Очистка старых конфигураций"
 rm -f /etc/polkit-1/rules.d/49-nopasswd.rules 2>/dev/null || true
-rm -f /etc/sudoers.d/90-$USER 2>/dev/null || true
+rm -f /etc/sudoers.d/90-$REAL_USER 2>/dev/null || true
 
 log "Настройка polkit и sudo"
 mkdir -p /etc/polkit-1/rules.d
@@ -39,10 +41,10 @@ polkit.addRule(function(action, subject) {
 EOF
 systemctl daemon-reexec
 
-echo "$USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-$USER
-chmod 440 /etc/sudoers.d/90-$USER
+echo "$REAL_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-$REAL_USER
+chmod 440 /etc/sudoers.d/90-$REAL_USER
 log "Политика sudo и polkit настроена"
-log "Настройка SSH для пользователя $USER"
+log "Настройка SSH для пользователя $REAL_USER"
 
 PORT=$(jq -r '.port' "$CONFIG_FILE")
 SSH_DISABLE_ROOT=$(jq -r '.ssh_disable_root' "$CONFIG_FILE")
@@ -51,14 +53,20 @@ MAX_AUTH_TRIES=$(jq -r '.max_auth_tries' "$CONFIG_FILE")
 MAX_SESSIONS=$(jq -r '.max_sessions' "$CONFIG_FILE")
 LOGIN_GRACE_TIME=$(jq -r '.login_grace_time' "$CONFIG_FILE")
 
-mkdir -p /home/$USER/.ssh
-chmod 700 /home/$USER/.ssh
-cp "$KEY_FILE" /home/$USER/.ssh/authorized_keys
-chmod 600 /home/$USER/.ssh/authorized_keys
-chown -R $USER:$USER /home/$USER/.ssh
+mkdir -p /home/$REAL_USER/.ssh
+chmod 700 /home/$REAL_USER/.ssh
+cp "$KEY_FILE" /home/$REAL_USER/.ssh/authorized_keys
+chmod 600 /home/$REAL_USER/.ssh/authorized_keys
+chown -R $REAL_USER:$REAL_USER /home/$REAL_USER/.ssh
 log "SSH-ключ установлен"
 
 log "Обновление /etc/ssh/sshd_config"
+
+# Проверка наличия openssh-server и установка при необходимости
+if ! systemctl list-unit-files | grep -q ssh.service && ! systemctl list-unit-files | grep -q sshd.service; then
+  log "openssh-server не найден, устанавливаю..."
+  apt install -y openssh-server
+fi
 sed -i "s/^#\?Port .*/Port $PORT/" /etc/ssh/sshd_config
 sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin $( [[ "$SSH_DISABLE_ROOT" == "true" ]] && echo "no" || echo "yes" )/" /etc/ssh/sshd_config
 sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication $( [[ "$SSH_PASSWORD_AUTH" == "true" ]] && echo "yes" || echo "no" )/" /etc/ssh/sshd_config
@@ -120,7 +128,7 @@ USER_NAME=\$(whoami)
 IP_ADDR=\$(who | awk '{print \$5}' | sed 's/[()]//g')
 HOSTNAME=\$(hostname)
 LOGIN_TIME=\$(date "+%Y-%m-%d %H:%M:%S")
-MESSAGE="SSH вход: *\$USER_NAME*%0AХост: \$HOSTNAME%0AВремя: \$LOGIN_TIME%0AIP: \\`\$IP_ADDR\\`%0AСервер: \\`\$LABEL\\`"
+MESSAGE="SSH вход: *\$REAL_USER_NAME*%0AХост: \$HOSTNAME%0AВремя: \$LOGIN_TIME%0AIP: \\`\$IP_ADDR\\`%0AСервер: \\`\$LABEL\\`"
 curl -s -X POST "https://api.telegram.org/bot\$BOT_TOKEN/sendMessage" -d chat_id="\$CHAT_ID" -d parse_mode="Markdown" -d text="\$MESSAGE" > /dev/null
 EOF
 chmod +x /etc/profile.d/notify_login.sh
@@ -149,7 +157,7 @@ rm -f "$TEMP_CRON" "${TEMP_CRON}.new"
 CHECKLIST="/tmp/install_checklist.txt"
 {
 echo "Чеклист установки:"
-echo "Пользователь: $USER"
+echo "Пользователь: $REAL_USER"
 echo "Активные сервисы:"
 for SERVICE in ufw fail2ban psad rkhunter; do
   systemctl is-active --quiet "$SERVICE" && echo "  [+] $SERVICE" || echo "  [ ] $SERVICE"
