@@ -77,7 +77,8 @@ log "rkhunter настроен"
 
 if [[ "$MONITORING_ENABLED" == "true" ]]; then
   log "Установка Netdata"
-  bash <(curl -SsL https://my-netdata.io/kickstart.sh) --dont-wait || log "Не удалось установить Netdata (проверь соединение или URL)"
+  curl -SsL https://my-netdata.io/kickstart.sh -o /tmp/netdata_installer.sh
+  bash /tmp/netdata_installer.sh --dont-wait || log "Не удалось установить Netdata (проверь соединение или URL)"
 fi
 
 log "Настройка Telegram-уведомлений"
