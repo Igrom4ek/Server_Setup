@@ -3,6 +3,7 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 
 REAL_USER=$(logname)
+export REAL_USER
 
 if [[ $EUID -ne 0 ]]; then
   echo "❌ Скрипт должен быть запущен с sudo!"
@@ -74,7 +75,7 @@ sed -i "s/^#\?MaxAuthTries .*/MaxAuthTries $MAX_AUTH_TRIES/" /etc/ssh/sshd_confi
 sed -i "s/^#\?MaxSessions .*/MaxSessions $MAX_SESSIONS/" /etc/ssh/sshd_config
 sed -i "s/^#\?LoginGraceTime .*/LoginGraceTime $LOGIN_GRACE_TIME/" /etc/ssh/sshd_config
 
-systemctl restart sshd
+systemctl restart ssh || systemctl restart sshd || true
 log "sshd перезапущен на порту $PORT"
 
 log "Установка и активация сервисов"
@@ -119,7 +120,7 @@ fi
 
 
 log "Настройка Telegram-уведомлений"
-cat <<'EOF' > /etc/profile.d/notify_login.sh
+cat <<EOF > /etc/profile.d/notify_login.sh
 #!/bin/bash
 BOT_TOKEN="$BOT_TOKEN"
 CHAT_ID="$CHAT_ID"
@@ -128,19 +129,19 @@ USER_NAME=\$(whoami)
 IP_ADDR=\$(who | awk '{print \$5}' | sed 's/[()]//g')
 HOSTNAME=\$(hostname)
 LOGIN_TIME=\$(date "+%Y-%m-%d %H:%M:%S")
-MESSAGE="SSH вход: *\$REAL_USER_NAME*%0AХост: \$HOSTNAME%0AВремя: \$LOGIN_TIME%0AIP: \\`\$IP_ADDR\\`%0AСервер: \\`\$LABEL\\`"
+MESSAGE="SSH вход: *\$REAL_USER*%0AХост: \$HOSTNAME%0AВремя: \$LOGIN_TIME%0AIP: \\`\$IP_ADDR\\`%0AСервер: \\`\$LABEL\\`"
 curl -s -X POST "https://api.telegram.org/bot\$BOT_TOKEN/sendMessage" -d chat_id="\$CHAT_ID" -d parse_mode="Markdown" -d text="\$MESSAGE" > /dev/null
 EOF
 chmod +x /etc/profile.d/notify_login.sh
 
 log "Настройка cron-задач"
-cat <<'EOF' > /usr/local/bin/security_monitor.sh
+cat <<EOF > /usr/local/bin/security_monitor.sh
 #!/bin/bash
 echo "[monitor] $(date)" >> /var/log/security_monitor.log
 EOF
 chmod +x /usr/local/bin/security_monitor.sh
 
-cat <<'EOF' > /usr/local/bin/clear_security_log.sh
+cat <<EOF > /usr/local/bin/clear_security_log.sh
 #!/bin/bash
 echo "[clear] $(date)" > /var/log/security_monitor.log
 EOF
