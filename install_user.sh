@@ -9,9 +9,8 @@ fi
 
 CONFIG_FILE="/usr/local/bin/config.json"
 KEY_FILE="/usr/local/bin/id_ed25519.pub"
-LOG="/var/log/install_user.log"
+LOG="$HOME/install_user.log"
 
-touch "$LOG"
 log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG"
 }
@@ -78,58 +77,28 @@ log "rkhunter настроен"
 
 if [[ "$MONITORING_ENABLED" == "true" ]]; then
   log "Установка Netdata"
-  bash <(curl -SsL https://my-netdata.io/kickstart.sh) || log "❌ Не удалось установить Netdata (проверь соединение или URL)"
+  bash <(curl -Ss https://raw.githubusercontent.com/netdata/netdata/master/netdata-installer.sh) || log "Не удалось установить Netdata (проверь соединение или URL)"
 fi
 
-log "Настройка Telegram-уведомлений (вход)"
-cat <<'EOF' > /etc/profile.d/notify_login.sh
+log "Настройка Telegram-уведомлений"
+cat > /etc/profile.d/notify_login.sh <<EOF
 #!/bin/bash
-BOT_TOKEN="8019987480:AAEJdUAAiGqlTFjOahWNh3RY5hiEwo3-E54"
-CHAT_ID="543102005"
-LABEL="🌍 Сервер: 77.73.235.118 (Латвия)"
-USER_NAME=$(whoami)
-IP_ADDR=$(who | awk '{print $5}' | sed 's/[()]//g')
-HOSTNAME=$(hostname)
-LOGIN_TIME=$(date "+%Y-%m-%d %H:%M:%S")
-MESSAGE="🛡️ *SSH вход*
-👤 Пользователь: \`\`\`$USER_NAME\`\`\`
-🖥️ Хост: \`\`\`$HOSTNAME\`\`\`
-⏱️ Время: \`\`\`$LOGIN_TIME\`\`\`
-🌐 IP: \`\`\`$IP_ADDR\`\`\`
-📡 Сервер: \`\`\`$LABEL\`\`\`"
-curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-  -d chat_id="$CHAT_ID" \
-  -d parse_mode="Markdown" \
-  --data-urlencode "text=$MESSAGE" > /dev/null
+BOT_TOKEN="$BOT_TOKEN"
+CHAT_ID="$CHAT_ID"
+LABEL="$LABEL"
+USER_NAME=\$(whoami)
+IP_ADDR=\$(who | awk '{print \$5}' | sed 's/[()]//g')
+HOSTNAME=\$(hostname)
+LOGIN_TIME=\$(date "+%Y-%m-%d %H:%M:%S")
+MESSAGE="SSH вход: *\$USER_NAME*%0AХост: \$HOSTNAME%0AВремя: \$LOGIN_TIME%0AIP: \\`\$IP_ADDR\\`%0AСервер: \\`\$LABEL\\`"
+curl -s -X POST "https://api.telegram.org/bot\$BOT_TOKEN/sendMessage" -d chat_id="\$CHAT_ID" -d parse_mode="Markdown" -d text="\$MESSAGE" > /dev/null
 EOF
 chmod +x /etc/profile.d/notify_login.sh
 
-log "Настройка cron-задач и security_monitor"
-cat > /usr/local/bin/security_monitor.sh <<'EOF'
+log "Настройка cron-задач"
+cat > /usr/local/bin/security_monitor.sh <<EOF
 #!/bin/bash
-LOG="/var/log/security_monitor.log"
-BOT_TOKEN="8019987480:AAEJdUAAiGqlTFjOahWNh3RY5hiEwo3-E54"
-CHAT_ID="543102005"
-LABEL="🌍 Сервер: 77.73.235.118 (Латвия)"
-
-send() {
-  curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-    -d chat_id="$CHAT_ID" \
-    -d parse_mode="Markdown" \
-    --data-urlencode "text=$1%0A📡 Сервер: \`\`\`$LABEL\`\`\`" > /dev/null
-}
-
-echo "$(date '+%F %T') | 🔍 Проверка" >> "$LOG"
-
-if command -v rkhunter &>/dev/null; then
-  RKHUNTER_RESULT=$(rkhunter --configfile /etc/rkhunter.conf --check --sk --nocolors --rwo 2>/dev/null || true)
-  [[ -n "$RKHUNTER_RESULT" ]] && send "🕵️ *RKHunter:*%0A\`\`\`$RKHUNTER_RESULT\`\`\`"
-fi
-
-if command -v psad &>/dev/null; then
-  PSAD_RESULT=$(grep "Danger level" /var/log/psad/alert | tail -n 5 || true)
-  [[ -n "$PSAD_RESULT" ]] && send "🚨 *PSAD:*%0A\`\`\`$PSAD_RESULT\`\`\`"
-fi
+echo "[monitor] $(date)" >> /var/log/security_monitor.log
 EOF
 chmod +x /usr/local/bin/security_monitor.sh
 
@@ -163,8 +132,7 @@ echo "Cron-задачи: настроены"
 CHECK_MSG=$(cat "$CHECKLIST" | sed 's/`/\`/g')
 cat "$CHECKLIST"
 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-  -d chat_id="$CHAT_ID" -d parse_mode="Markdown" \
-  --data-urlencode "text=📝 *Итог установки*\n\`\`\`\n$CHECK_MSG\n\`\`\`" > /dev/null
+  -d chat_id="$CHAT_ID" -d parse_mode="Markdown" -d text="\\`\`\`$CHECK_MSG\\`\`\`" > /dev/null
 rm "$CHECKLIST"
 
-log "✅ Установка завершена"
+log "Установка завершена"
