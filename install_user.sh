@@ -7,9 +7,9 @@ SSH_DISABLE_ROOT=$(jq -r '.ssh_disable_root' "$CONFIG_FILE")
 SSH_PASSWORD_AUTH=$(jq -r '.ssh_password_auth' "$CONFIG_FILE")
 USERNAME=$(whoami)
 
-log() {{
+log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') | $1"
-}}
+}
 
 log "📁 Создание ~/.ssh и настройка ключей"
 mkdir -p ~/.ssh
@@ -94,15 +94,15 @@ CHAT_ID="$CHAT_ID"
 LABEL="$LABEL"
 OFFSET=0
 
-get_updates() {{
+get_updates() {
   curl -s "https://api.telegram.org/bot\$TOKEN/getUpdates?offset=\$OFFSET"
-}}
+}
 
-send_message() {{
+send_message() {
   local text="\$1"
   curl -s -X POST "https://api.telegram.org/bot\$TOKEN/sendMessage" \
     -d chat_id="\$CHAT_ID" -d parse_mode="Markdown" -d text="\$text" > /dev/null
-}}
+}
 
 while true; do
   RESPONSE=\$(get_updates)
@@ -162,7 +162,7 @@ sudo systemctl enable --now telegram_command_listener.service
 log "📬 Отправка финального Telegram-чеклиста"
 
 CHECKLIST="/tmp/install_checklist.txt"
-{{
+{
 echo "Чеклист установки:"
 echo "Пользователь: $USERNAME"
 echo "SSH порт: $PORT"
@@ -171,8 +171,8 @@ for SERVICE in ufw fail2ban psad rkhunter; do
   sudo systemctl is-active --quiet "$SERVICE" && echo "  [+] $SERVICE" || echo "  [ ] $SERVICE"
 done
 echo "Telegram-бот: включён"
-echo "Netdata: http://$(hostname -I | awk '{{print $1}}'):19999"
-}} > "$CHECKLIST"
+echo "Netdata: http://$(hostname -I | awk '{print $1}'):19999"
+} > "$CHECKLIST"
 
 CHECK_MSG=$(cat "$CHECKLIST" | sed 's/`/\`/g')
 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
