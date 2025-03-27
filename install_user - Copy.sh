@@ -42,32 +42,6 @@ systemctl daemon-reexec
 echo "$USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-$USER
 chmod 440 /etc/sudoers.d/90-$USER
 log "Политика sudo и polkit настроена"
-log "Настройка SSH для пользователя $USER"
-
-PORT=$(jq -r '.port' "$CONFIG_FILE")
-SSH_DISABLE_ROOT=$(jq -r '.ssh_disable_root' "$CONFIG_FILE")
-SSH_PASSWORD_AUTH=$(jq -r '.ssh_password_auth' "$CONFIG_FILE")
-MAX_AUTH_TRIES=$(jq -r '.max_auth_tries' "$CONFIG_FILE")
-MAX_SESSIONS=$(jq -r '.max_sessions' "$CONFIG_FILE")
-LOGIN_GRACE_TIME=$(jq -r '.login_grace_time' "$CONFIG_FILE")
-
-mkdir -p /home/$USER/.ssh
-chmod 700 /home/$USER/.ssh
-cp "$KEY_FILE" /home/$USER/.ssh/authorized_keys
-chmod 600 /home/$USER/.ssh/authorized_keys
-chown -R $USER:$USER /home/$USER/.ssh
-log "SSH-ключ установлен"
-
-log "Обновление /etc/ssh/sshd_config"
-sed -i "s/^#\?Port .*/Port $PORT/" /etc/ssh/sshd_config
-sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin $( [[ "$SSH_DISABLE_ROOT" == "true" ]] && echo "no" || echo "yes" )/" /etc/ssh/sshd_config
-sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication $( [[ "$SSH_PASSWORD_AUTH" == "true" ]] && echo "yes" || echo "no" )/" /etc/ssh/sshd_config
-sed -i "s/^#\?MaxAuthTries .*/MaxAuthTries $MAX_AUTH_TRIES/" /etc/ssh/sshd_config
-sed -i "s/^#\?MaxSessions .*/MaxSessions $MAX_SESSIONS/" /etc/ssh/sshd_config
-sed -i "s/^#\?LoginGraceTime .*/LoginGraceTime $LOGIN_GRACE_TIME/" /etc/ssh/sshd_config
-
-systemctl restart sshd
-log "sshd перезапущен на порту $PORT"
 
 log "Установка и активация сервисов"
 for SERVICE in ufw fail2ban psad rkhunter nmap; do
@@ -106,9 +80,6 @@ if [[ "$MONITORING_ENABLED" == "true" ]]; then
   curl -SsL https://my-netdata.io/kickstart.sh -o /tmp/netdata_installer.sh
   bash /tmp/netdata_installer.sh --dont-wait || log "Не удалось установить Netdata (проверь соединение или URL)"
 fi
-
-
-
 
 log "Настройка Telegram-уведомлений"
 cat <<'EOF' > /etc/profile.d/notify_login.sh
@@ -166,80 +137,3 @@ curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
 rm "$CHECKLIST"
 
 log "Установка завершена"
-
-log "Создание Telegram бота-слушателя"
-
-cat <<EOF > /usr/local/bin/telegram_command_listener.sh
-#!/bin/bash
-
-TOKEN="$BOT_TOKEN"
-CHAT_ID="$CHAT_ID"
-LABEL="$LABEL"
-OFFSET=0
-
-get_updates() {
-  curl -s "https://api.telegram.org/bot\$TOKEN/getUpdates?offset=\$OFFSET"
-}
-
-send_message() {
-  local text="\$1"
-  curl -s -X POST "https://api.telegram.org/bot\$TOKEN/sendMessage" \\
-    -d chat_id="\$CHAT_ID" -d parse_mode="Markdown" -d text="\$text" > /dev/null
-}
-
-while true; do
-  RESPONSE=\$(get_updates)
-  echo "\$RESPONSE" | jq -c '.result[]' | while read -r update; do
-    UPDATE_ID=\$(echo "\$update" | jq '.update_id')
-    OFFSET=\$((UPDATE_ID + 1))
-    MESSAGE=\$(echo "\$update" | jq -r '.message.text')
-
-    case "\$MESSAGE" in
-      /help)
-        send_message "*Команды:*
-/help — помощь
-/security — логи psad, rkhunter
-/uptime — аптайм сервера"
-        ;;
-      /security)
-        RKHUNTER=\$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || echo "rkhunter не установлен")
-        PSAD=\$(grep "Danger level" /var/log/psad/alert | tail -n 5 || echo "psad лог пуст")
-        send_message "*RKHunter:*
-\`\`\`\$RKHUNTER\`\`\`
-
-*PSAD:*
-\`\`\`\$PSAD\`\`\`"
-        ;;
-      /uptime)
-        send_message "*Аптайм:* \$(uptime -p)"
-        ;;
-      *)
-        send_message "Неизвестная команда. Напиши /help"
-        ;;
-    esac
-  done
-  sleep 3
-done
-EOF
-
-chmod +x /usr/local/bin/telegram_command_listener.sh
-
-cat <<EOF > /etc/systemd/system/telegram_command_listener.service
-[Unit]
-Description=Telegram Command Listener
-After=network.target
-
-[Service]
-ExecStart=/usr/local/bin/telegram_command_listener.sh
-Restart=always
-User=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reexec
-systemctl daemon-reload
-systemctl enable --now telegram_command_listener.service
-
-log "Telegram бот-слушатель активирован"
