@@ -139,9 +139,95 @@ rm "$CHECKLIST"
 log "Установка завершена"
 
 
+log "Создание Telegram бота-слушателя"
+
+cat <<EOF > /usr/local/bin/telegram_command_listener.sh
+#!/bin/bash
+TOKEN="$(jq -r '.telegram_bot_token' /usr/local/bin/config.json)"
+CHAT_ID="$(jq -r '.telegram_chat_id' /usr/local/bin/config.json)"
+LABEL="$(jq -r '.telegram_server_label' /usr/local/bin/config.json)"
+OFFSET=0
+
+get_updates() {
+  curl -s "https://api.telegram.org/bot$TOKEN/getUpdates?offset=$OFFSET"
+}
+
+send_message() {
+  local text="$1"
+  curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+    -d chat_id="$CHAT_ID" -d parse_mode="Markdown" -d text="$text" > /dev/null
+}
+
+while true; do
+  RESPONSE=$(get_updates)
+  echo "$RESPONSE" | jq -c '.result[]' | while read -r update; do
+    UPDATE_ID=$(echo "$update" | jq '.update_id')
+    OFFSET=$((UPDATE_ID + 1))
+    MESSAGE=$(echo "$update" | jq -r '.message.text')
+
+    case "$MESSAGE" in
+      /help)
+        send_message "*Команды:*
+/help — помощь
+/security — логи psad, rkhunter
+/uptime — аптайм сервера"
+        ;;
+      /security)
+        RKHUNTER=$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || echo "rkhunter не установлен")
+        PSAD=$(grep "Danger level" /var/log/psad/alert | tail -n 5 || echo "psad лог пуст")
+        send_message "*RKHunter:*
+\`\`\`$RKHUNTER\`\`\`
+
+*PSAD:*
+\`\`\`$PSAD\`\`\`"
+        ;;
+      /uptime)
+        send_message "*Аптайм:* $(uptime -p)"
+        ;;
+      *)
+        send_message "Неизвестная команда. Напиши /help"
+        ;;
+    esac
+  done
+  sleep 3
+done
+EOF
+
+chmod +x /usr/local/bin/telegram_command_listener.sh
+
+cat <<EOF > /etc/systemd/system/telegram_command_listener.service
+[Unit]
+Description=Telegram Command Listener
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/telegram_command_listener.sh
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reexec
+systemctl daemon-reload
+systemctl enable --now telegram_command_listener.service
+
+log "Telegram бот-слушатель активирован"
+
+
+
 log "📋 Финальный чеклист установки"
 
 FINAL_CHECKLIST="/tmp/final_checklist.txt"
+REAL_USER=$(logname)
+CONFIG_FILE="/usr/local/bin/config.json"
+PORT=$(jq -r ".port" "$CONFIG_FILE")
+MONITORING_ENABLED=$(jq -r ".monitoring_enabled" "$CONFIG_FILE")
+BOT_TOKEN=$(jq -r ".telegram_bot_token" "$CONFIG_FILE")
+CHAT_ID=$(jq -r ".telegram_chat_id" "$CONFIG_FILE")
+LABEL=$(jq -r ".telegram_server_label" "$CONFIG_FILE")
+
 {
 echo "✅ Установка завершена"
 echo "Пользователь: $REAL_USER"
@@ -150,15 +236,16 @@ echo "Активные службы:"
 for SERVICE in ufw fail2ban psad rkhunter nmap; do
   systemctl is-active --quiet "$SERVICE" && echo "  [+] $SERVICE" || echo "  [ ] $SERVICE"
 done
-echo "Netdata: $( [[ \"$MONITORING_ENABLED\" == \"true\" ]] && echo 'включен' || echo 'отключён' )"
-echo "Telegram уведомления: включены"
+echo "Netdata: $( [[ "$MONITORING_ENABLED" == "true" ]] && echo 'включен' || echo 'отключён' )"
 systemctl is-active --quiet telegram_command_listener.service && echo "Бот-слушатель: активен" || echo "Бот-слушатель: [ ] не запущен"
 echo "RKHunter проверка: доступна /usr/bin/rkhunter --check"
 echo "Cron-задачи:"
-crontab -l | grep -E 'security_monitor|clear_security_log' || echo '  [ ] не найдены'
+crontab -l | grep -E "security_monitor|clear_security_log" || echo "  [ ] не найдены"
 } > "$FINAL_CHECKLIST"
 
 cat "$FINAL_CHECKLIST"
+
 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-  -d chat_id="$CHAT_ID" -d parse_mode="Markdown" -d text="\`\`\`$(cat $FINAL_CHECKLIST)\`\`\`" > /dev/null
-rm -f "$FINAL_CHECKLIST"
+  -d chat_id="$CHAT_ID" -d parse_mode="Markdown" -d text="\\`\\`\\`$(cat $FINAL_CHECKLIST)\\`\\`\\`" > /dev/null
+
+rm "$FINAL_CHECKLIST"
