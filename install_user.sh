@@ -1,54 +1,55 @@
 #!/bin/bash
 set -e
-export DEBIAN_FRONTEND=noninteractive
-
-if [[ $EUID -ne 0 ]]; then
-  echo "❌ Скрипт должен быть запущен с sudo!"
-  exit 1
-fi
-
 CONFIG_FILE="/usr/local/bin/config.json"
-KEY_FILE="/usr/local/bin/id_ed25519.pub"
-LOG="$HOME/install_user.log"
+PUBKEY=$(jq -r '.public_key_content' "$CONFIG_FILE")
+PORT=$(jq -r '.port' "$CONFIG_FILE")
+SSH_DISABLE_ROOT=$(jq -r '.ssh_disable_root' "$CONFIG_FILE")
+SSH_PASSWORD_AUTH=$(jq -r '.ssh_password_auth' "$CONFIG_FILE")
+USERNAME=$(whoami)
 
 log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$LOG"
+  echo "$(date '+%Y-%m-%d %H:%M:%S') | $1"
 }
 
-log "== Установка сервисов от пользователя $USER =="
+log "📁 Создание ~/.ssh и настройка ключей"
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+cd ~/.ssh
+touch authorized_keys
+chmod 600 authorized_keys
 
-BOT_TOKEN=$(jq -r '.telegram_bot_token' "$CONFIG_FILE")
-CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG_FILE")
-LABEL=$(jq -r '.telegram_server_label' "$CONFIG_FILE")
-SECURITY_CHECK_CRON=$(jq -r '.cron_tasks.security_check' "$CONFIG_FILE")
-CLEAR_LOG_CRON=$(jq -r '.cron_tasks.clear_logs' "$CONFIG_FILE")
-MONITORING_ENABLED=$(jq -r '.monitoring_enabled' "$CONFIG_FILE")
+log "🔑 Установка публичного ключа"
+echo "$PUBKEY" > authorized_keys
 
-log "Очистка старых конфигураций"
-rm -f /etc/polkit-1/rules.d/49-nopasswd.rules 2>/dev/null || true
-rm -f /etc/sudoers.d/90-$USER 2>/dev/null || true
+log "🛠 Настройка /etc/ssh/sshd_config"
+sudo sed -i "s/^#\?Port .*/Port $PORT/" /etc/ssh/sshd_config
+if [[ "$SSH_DISABLE_ROOT" == "true" ]]; then
+  sudo sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" /etc/ssh/sshd_config
+fi
+if [[ "$SSH_PASSWORD_AUTH" == "false" ]]; then
+  sudo sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" /etc/ssh/sshd_config
+fi
 
-log "Настройка polkit и sudo"
-mkdir -p /etc/polkit-1/rules.d
-cat <<EOF > /etc/polkit-1/rules.d/49-nopasswd.rules
-polkit.addRule(function(action, subject) {
-  if (subject.isInGroup("sudo")) {
-    return polkit.Result.YES;
-  }
-});
-EOF
-systemctl daemon-reexec
+log "🔄 Перезапуск SSH"
+sudo service ssh restart
 
-echo "$USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-$USER
-chmod 440 /etc/sudoers.d/90-$USER
-log "Политика sudo и polkit настроена"
+log "🔓 Отключение запроса пароля для sudo (если нужно)"
+SUDO_NOPASSWD=$(jq -r '.sudo_nopasswd' "$CONFIG_FILE")
+if [[ "$SUDO_NOPASSWD" == "true" ]]; then
+  echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" | sudo tee "/etc/sudoers.d/90-$USERNAME" > /dev/null
+  sudo chmod 440 "/etc/sudoers.d/90-$USERNAME"
+fi
 
-log "Установка и активация сервисов"
+log "✅ Настройка пользователя завершена. Готово к следующему этапу (защита, бот, чеклист)"
+
+
+log "🛡 Установка и настройка системной защиты"
+
 for SERVICE in ufw fail2ban psad rkhunter nmap; do
   if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
-    apt install -y "$SERVICE"
+    sudo apt install -y "$SERVICE"
     if systemctl list-unit-files | grep -q "^$SERVICE.service"; then
-      systemctl enable --now "$SERVICE"
+      sudo systemctl enable --now "$SERVICE"
       log "$SERVICE активирован"
     else
       log "$SERVICE не использует systemd — пропущено"
@@ -58,9 +59,9 @@ for SERVICE in ufw fail2ban psad rkhunter nmap; do
   fi
 done
 
-log "Настройка rkhunter"
-rkhunter --propupd || true
-cat <<EOF > /etc/systemd/system/rkhunter.service
+log "📦 Настройка rkhunter"
+sudo rkhunter --propupd || true
+sudo tee /etc/systemd/system/rkhunter.service > /dev/null <<EOF
 [Unit]
 Description=Rootkit Hunter Service
 After=network.target
@@ -70,19 +71,23 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reexec
-systemctl enable --now rkhunter.service
-echo "0 1 * * * root /usr/bin/rkhunter --check --cronjob" > /etc/cron.d/rkhunter-daily
-log "rkhunter настроен"
+sudo systemctl daemon-reexec
+sudo systemctl enable --now rkhunter.service
+echo "0 1 * * * root /usr/bin/rkhunter --check --cronjob" | sudo tee /etc/cron.d/rkhunter-daily > /dev/null
 
-if [[ "$MONITORING_ENABLED" == "true" ]]; then
-  log "Установка Netdata"
-  curl -SsL https://my-netdata.io/kickstart.sh -o /tmp/netdata_installer.sh
-  bash /tmp/netdata_installer.sh --dont-wait || log "Не удалось установить Netdata (проверь соединение или URL)"
+if [[ "$(jq -r '.monitoring_enabled' "$CONFIG_FILE")" == "true" ]]; then
+  log "📊 Установка Netdata"
+  curl -Ss https://my-netdata.io/kickstart.sh -o /tmp/netdata_installer.sh
+  sudo bash /tmp/netdata_installer.sh --dont-wait || log "⚠️ Не удалось установить Netdata"
 fi
 
-log "Создание Telegram бота-слушателя"
-cat <<EOF > /usr/local/bin/telegram_command_listener.sh
+log "🤖 Создание Telegram бота-слушателя"
+
+BOT_TOKEN=$(jq -r '.telegram_bot_token' "$CONFIG_FILE")
+CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG_FILE")
+LABEL=$(jq -r '.telegram_server_label' "$CONFIG_FILE")
+
+sudo tee /usr/local/bin/telegram_command_listener.sh > /dev/null <<EOF
 #!/bin/bash
 TOKEN="$BOT_TOKEN"
 CHAT_ID="$CHAT_ID"
@@ -116,8 +121,11 @@ while true; do
       /security)
         RKHUNTER=\$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || echo "rkhunter не установлен")
         PSAD=\$(grep "Danger level" /var/log/psad/alert | tail -n 5 || echo "psad лог пуст")
-        send_message "*RKHunter:*\n\`\`\`\n\$RKHUNTER\n\`\`\`
-*PSAD:*\n\`\`\`\n\$PSAD\n\`\`\`"
+        send_message "*RKHunter:*
+\`\`\`\$RKHUNTER\`\`\`
+
+*PSAD:*
+\`\`\`\$PSAD\`\`\`"
         ;;
       /uptime)
         send_message "*Аптайм:* \$(uptime -p)"
@@ -130,9 +138,10 @@ while true; do
   sleep 3
 done
 EOF
-chmod +x /usr/local/bin/telegram_command_listener.sh
 
-cat <<EOF > /etc/systemd/system/telegram_command_listener.service
+sudo chmod +x /usr/local/bin/telegram_command_listener.sh
+
+sudo tee /etc/systemd/system/telegram_command_listener.service > /dev/null <<EOF
 [Unit]
 Description=Telegram Command Listener
 After=network.target
@@ -140,65 +149,29 @@ After=network.target
 [Service]
 ExecStart=/usr/local/bin/telegram_command_listener.sh
 Restart=always
-User=$USER
+User=$USERNAME
 
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reexec
-systemctl daemon-reload
-systemctl enable --now telegram_command_listener.service
 
-log "Настройка Telegram-уведомлений при входе"
-cat <<EOF > /etc/profile.d/notify_login.sh
-#!/bin/bash
-BOT_TOKEN="$BOT_TOKEN"
-CHAT_ID="$CHAT_ID"
-LABEL="$LABEL"
-USER_NAME=\$(whoami)
-IP_ADDR=\$(who | awk '{print \$5}' | sed 's/[()]//g')
-HOSTNAME=\$(hostname)
-LOGIN_TIME=\$(date "+%Y-%m-%d %H:%M:%S")
-MESSAGE="SSH вход: *\$USER_NAME*%0AХост: \$HOSTNAME%0AВремя: \$LOGIN_TIME%0AIP: \\`\$IP_ADDR\\`%0AСервер: \\`\$LABEL\\`"
-curl -s -X POST "https://api.telegram.org/bot\$BOT_TOKEN/sendMessage" \
-  -d chat_id="\$CHAT_ID" -d parse_mode="Markdown" -d text="\$MESSAGE" > /dev/null
-EOF
-chmod +x /etc/profile.d/notify_login.sh
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+sudo systemctl enable --now telegram_command_listener.service
 
-log "Настройка cron-задач"
-cat <<EOF > /usr/local/bin/security_monitor.sh
-#!/bin/bash
-echo "[monitor] \$(date)" >> /var/log/security_monitor.log
-EOF
-chmod +x /usr/local/bin/security_monitor.sh
+log "📬 Отправка финального Telegram-чеклиста"
 
-cat <<EOF > /usr/local/bin/clear_security_log.sh
-#!/bin/bash
-echo "[clear] \$(date)" > /var/log/security_monitor.log
-EOF
-chmod +x /usr/local/bin/clear_security_log.sh
-
-TEMP_CRON=$(mktemp)
-crontab -l 2>/dev/null > "$TEMP_CRON" || true
-grep -v 'security_monitor\|clear_security_log' "$TEMP_CRON" > "${TEMP_CRON}.new"
-echo "$SECURITY_CHECK_CRON /usr/local/bin/security_monitor.sh" >> "${TEMP_CRON}.new"
-echo "$CLEAR_LOG_CRON /usr/local/bin/clear_security_log.sh" >> "${TEMP_CRON}.new"
-crontab "${TEMP_CRON}.new"
-rm -f "$TEMP_CRON" "${TEMP_CRON}.new"
-
-log "📬 Отправка Telegram-чеклиста"
 CHECKLIST="/tmp/install_checklist.txt"
 {
 echo "Чеклист установки:"
-echo "Пользователь: $USER"
+echo "Пользователь: $USERNAME"
+echo "SSH порт: $PORT"
 echo "Службы:"
 for SERVICE in ufw fail2ban psad rkhunter; do
-  systemctl is-active --quiet "$SERVICE" && echo "  [+] $SERVICE" || echo "  [ ] $SERVICE"
+  sudo systemctl is-active --quiet "$SERVICE" && echo "  [+] $SERVICE" || echo "  [ ] $SERVICE"
 done
-echo "Netdata: http://$(hostname -I | awk '{print $1}'):19999"
 echo "Telegram-бот: включён"
-echo "rkhunter: доступна проверка /usr/bin/rkhunter --check"
-echo "Cron-задачи: настроены"
+echo "Netdata: http://$(hostname -I | awk '{print $1}'):19999"
 } > "$CHECKLIST"
 
 CHECK_MSG=$(cat "$CHECKLIST" | sed 's/`/\`/g')
