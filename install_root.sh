@@ -29,7 +29,10 @@ PASSWORD=$(jq -r '.user_password' "$CONFIG_FILE")
 log "👤 Создаём пользователя $USERNAME"
 adduser --disabled-password --gecos "" "$USERNAME"
 echo "$USERNAME:$PASSWORD" | chpasswd
-usermod -aG sudo,adm,systemd-journal,syslog,docker "$USERNAME"
+usermod -aG sudo,adm,systemd-journal,syslog "$USERNAME"
+if getent group docker > /dev/null; then
+  usermod -aG docker "$USERNAME"
+fi
 
 log "🔒 Отключаем запрос пароля polkit для группы sudo"
 # Удаляем старые polkit-правила
