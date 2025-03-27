@@ -81,7 +81,7 @@ if [[ "$MONITORING_ENABLED" == "true" ]]; then
 fi
 
 log "Настройка Telegram-уведомлений"
-cat > /etc/profile.d/notify_login.sh <<EOF
+cat <<'EOF' > /etc/profile.d/notify_login.sh
 #!/bin/bash
 BOT_TOKEN="$BOT_TOKEN"
 CHAT_ID="$CHAT_ID"
@@ -96,13 +96,13 @@ EOF
 chmod +x /etc/profile.d/notify_login.sh
 
 log "Настройка cron-задач"
-cat > /usr/local/bin/security_monitor.sh <<EOF
+cat <<'EOF' > /usr/local/bin/security_monitor.sh
 #!/bin/bash
 echo "[monitor] $(date)" >> /var/log/security_monitor.log
 EOF
 chmod +x /usr/local/bin/security_monitor.sh
 
-cat > /usr/local/bin/clear_security_log.sh <<EOF
+cat <<'EOF' > /usr/local/bin/clear_security_log.sh
 #!/bin/bash
 echo "[clear] $(date)" > /var/log/security_monitor.log
 EOF
