@@ -17,7 +17,6 @@ log() {
 
 log "🚀 Установка сервисов от пользователя $USER"
 
-# === Подгружаем параметры из config.json ===
 BOT_TOKEN=$(jq -r '.telegram_bot_token' "$CONFIG_FILE")
 CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG_FILE")
 LABEL=$(jq -r '.telegram_server_label' "$CONFIG_FILE")
@@ -25,13 +24,11 @@ SECURITY_CHECK_CRON=$(jq -r '.cron_tasks.security_check' "$CONFIG_FILE")
 CLEAR_LOG_CRON=$(jq -r '.cron_tasks.clear_logs' "$CONFIG_FILE")
 MONITORING_ENABLED=$(jq -r '.monitoring_enabled' "$CONFIG_FILE")
 
-# === Проверка и очистка старых правил ===
-log "🔍 Проверка старых файлов и служб"
+log "🔍 Очистка старых конфигураций"
 rm -f /etc/polkit-1/rules.d/49-nopasswd.rules 2>/dev/null || true
 rm -f /etc/sudoers.d/90-$USER 2>/dev/null || true
 
-# === Настройка polkit и sudo ===
-log "🔒 Настройка polkit и sudo без пароля"
+log "🔒 Настройка polkit и sudo"
 mkdir -p /etc/polkit-1/rules.d
 cat <<EOF > /etc/polkit-1/rules.d/49-nopasswd.rules
 polkit.addRule(function(action, subject) {
@@ -46,7 +43,6 @@ echo "$USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-$USER
 chmod 440 /etc/sudoers.d/90-$USER
 log "✅ Политика sudo и polkit настроена"
 
-# === Установка сервисов ===
 log "📦 Установка и активация сервисов"
 for SERVICE in ufw fail2ban psad rkhunter nmap; do
   if [[ "$(jq -r ".services.$SERVICE" "$CONFIG_FILE")" == "true" ]]; then
@@ -62,7 +58,6 @@ for SERVICE in ufw fail2ban psad rkhunter nmap; do
   fi
 done
 
-# === Настройка rkhunter + systemd ===
 log "🛡 Настройка rkhunter"
 rkhunter --propupd || true
 cat <<EOF > /etc/systemd/system/rkhunter.service
@@ -80,20 +75,18 @@ systemctl enable --now rkhunter.service
 echo "0 1 * * * root /usr/bin/rkhunter --check --cronjob" > /etc/cron.d/rkhunter-daily
 log "✅ rkhunter настроен"
 
-# === Установка Netdata ===
 if [[ "$MONITORING_ENABLED" == "true" ]]; then
   log "📡 Установка Netdata"
-  bash <(curl -Ss https://my-netdata.io/kickstart.sh) || log "❌ Не удалось установить Netdata"
+  bash <(curl -Ss https://raw.githubusercontent.com/netdata/netdata/master/netdata-installer.sh) || log "❌ Не удалось установить Netdata (проверь соединение или URL)"
 fi
 
-# === Telegram-уведомления при входе ===
 log "📲 Настройка Telegram-уведомлений"
 cat > /etc/profile.d/notify_login.sh <<EOF
 #!/bin/bash
 BOT_TOKEN="$BOT_TOKEN"
 CHAT_ID="$CHAT_ID"
 LABEL="$LABEL"
-USER_NAME=$(whoami)
+USER_NAME=\$(whoami)
 IP_ADDR=\$(who | awk '{print \$5}' | sed 's/[()]//g')
 HOSTNAME=\$(hostname)
 LOGIN_TIME=\$(date "+%Y-%m-%d %H:%M:%S")
@@ -102,7 +95,6 @@ curl -s -X POST "https://api.telegram.org/bot\$BOT_TOKEN/sendMessage" -d chat_id
 EOF
 chmod +x /etc/profile.d/notify_login.sh
 
-# === Cron-задачи мониторинга ===
 log "⏱ Настройка cron-задач"
 cat > /usr/local/bin/security_monitor.sh <<EOF
 #!/bin/bash
@@ -123,9 +115,7 @@ echo "$SECURITY_CHECK_CRON /usr/local/bin/security_monitor.sh" >> "${TEMP_CRON}.
 echo "$CLEAR_LOG_CRON /usr/local/bin/clear_security_log.sh" >> "${TEMP_CRON}.new"
 crontab "${TEMP_CRON}.new"
 rm -f "$TEMP_CRON" "${TEMP_CRON}.new"
-log "✅ Cron-задачи добавлены"
 
-# === Финальный чеклист ===
 CHECKLIST="/tmp/install_checklist.txt"
 {
 echo "🛡️ Чеклист установки:"
@@ -136,12 +126,13 @@ for SERVICE in ufw fail2ban psad rkhunter; do
 done
 echo "Telegram уведомления: включены"
 echo "rkhunter: проверка доступна /usr/bin/rkhunter --check"
-echo "Cron-задачи добавлены"
+echo "Cron-задачи: настроены"
 } > "$CHECKLIST"
 
+CHECK_MSG=$(cat "$CHECKLIST" | sed 's/`/\`/g')
 cat "$CHECKLIST"
 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-  -d chat_id="$CHAT_ID" -d parse_mode="Markdown" -d text="\\`\`\`$(cat "$CHECKLIST")\\`\`\`" > /dev/null
+  -d chat_id="$CHAT_ID" -d parse_mode="Markdown" -d text="\\`\`\`$CHECK_MSG\\`\`\`" > /dev/null
 rm "$CHECKLIST"
 
 log "✅ Установка завершена"
