@@ -87,31 +87,47 @@ BOT_TOKEN=$(jq -r '.telegram_bot_token' "$CONFIG_FILE")
 CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG_FILE")
 LABEL=$(jq -r '.telegram_server_label' "$CONFIG_FILE")
 
-sudo tee /usr/local/bin/telegram_command_listener.sh > /dev/null <<EOF
+sudo tee /usr/local/bin/telegram_command_listener.sh > /dev/null <<'EOF'
 #!/bin/bash
-TOKEN="$BOT_TOKEN"
-CHAT_ID="$CHAT_ID"
-LABEL="$LABEL"
-OFFSET=0
+TOKEN="'"$BOT_TOKEN"'"
+CHAT_ID="'"$CHAT_ID"'"
+LABEL="'"$LABEL"'"
+
+OFFSET_FILE="$HOME/.cache/telegram_bot_offset"
+mkdir -p "$(dirname "$OFFSET_FILE")"
+
+if [[ -f "$OFFSET_FILE" ]]; then
+  OFFSET=$(cat "$OFFSET_FILE")
+else
+  OFFSET=0
+fi
 
 get_updates() {
-  curl -s "https://api.telegram.org/bot\$TOKEN/getUpdates?offset=\$OFFSET"
+  curl -s "https://api.telegram.org/bot$TOKEN/getUpdates?offset=$OFFSET"
 }
 
 send_message() {
-  local text="\$1"
-  curl -s -X POST "https://api.telegram.org/bot\$TOKEN/sendMessage" \
-    -d chat_id="\$CHAT_ID" -d parse_mode="Markdown" -d text="\$text" > /dev/null
+  local text="$1"
+  curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+    -d chat_id="$CHAT_ID" -d parse_mode="Markdown" -d text="$text" > /dev/null
 }
 
 while true; do
-  RESPONSE=\$(get_updates)
-  echo "\$RESPONSE" | jq -c '.result[]' | while read -r update; do
-    UPDATE_ID=\$(echo "\$update" | jq '.update_id')
-    OFFSET=\$((UPDATE_ID + 1))
-    MESSAGE=\$(echo "\$update" | jq -r '.message.text')
+  RESPONSE=$(get_updates)
+  UPDATES=$(echo "$RESPONSE" | jq -c '.result')
 
-    case "\$MESSAGE" in
+  LENGTH=$(echo "$UPDATES" | jq 'length')
+  [[ "$LENGTH" -eq 0 ]] && sleep 3 && continue
+
+  for ((i = 0; i < LENGTH; i++)); do
+    UPDATE=$(echo "$UPDATES" | jq -c ".[$i]")
+    UPDATE_ID=$(echo "$UPDATE" | jq '.update_id')
+    MESSAGE=$(echo "$UPDATE" | jq -r '.message.text')
+
+    OFFSET=$((UPDATE_ID + 1))
+    echo "$OFFSET" | tee "$OFFSET_FILE" > /dev/null
+
+    case "$MESSAGE" in
       /help)
         send_message "*Команды:*
 /help — помощь
@@ -119,8 +135,8 @@ while true; do
 /uptime — аптайм сервера"
         ;;
       /security)
-        RKHUNTER=\$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || echo "rkhunter не установлен")
-        PSAD=\$(grep "Danger level" /var/log/psad/alert | tail -n 5 || echo "psad лог пуст")
+        RKHUNTER=$(rkhunter --check --sk --nocolors --rwo 2>/dev/null || echo "rkhunter не установлен")
+        PSAD=$(grep "Danger level" /var/log/psad/alert | tail -n 5 || echo "psad лог пуст")
         send_message "*RKHunter:*
 \`\`\`\$RKHUNTER\`\`\`
 
@@ -128,13 +144,14 @@ while true; do
 \`\`\`\$PSAD\`\`\`"
         ;;
       /uptime)
-        send_message "*Аптайм:* \$(uptime -p)"
+        send_message "*Аптайм:* $(uptime -p)"
         ;;
       *)
         send_message "Неизвестная команда. Напиши /help"
         ;;
     esac
   done
+
   sleep 3
 done
 EOF
