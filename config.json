@@ -2,40 +2,34 @@
   "username": "igrom",
   "user_password": "Unguryan@224911",
   "port": 5075,
-  "ssh_key_file": "/usr/local/bin/id_ed25519.pub",
+  "public_key_content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH9FFLVLtBDOGMWafHy2y3d1QTldfkgbDADSwdgErQqM igrom@vpn",
   "log_file": "/var/log/setupv2.log",
   "security_log_file": "/var/log/security_monitor.log",
   "sudo_nopasswd": false,
-
   "ssh_disable_root": false,
   "ssh_password_auth": false,
   "max_auth_tries": 3,
   "max_sessions": 2,
   "login_grace_time": 30,
-
   "fail2ban_enabled": true,
   "firewall": "ufw",
   "enable_dos_protection": true,
-
   "telegram_enabled": true,
   "telegram_bot_token": "8019987480:AAEJdUAAiGqlTFjOahWNh3RY5hiEwo3-E54",
   "telegram_chat_id": "543102005",
   "telegram_server_label": "🌍 Сервер: 77.73.235.118 (Латвия)",
-
   "monitoring_enabled": true,
   "monitoring_tool": "netdata",
-
   "cron_tasks": {
     "clear_logs": "0 5 * * 0",
     "security_check": "0 6 * * *",
     "auto_update": "0 3 * * *"
   },
-
   "services": {
-  "ufw": true,
-  "fail2ban": true,
-  "psad": true,
-  "rkhunter": true,
-  "nmap": true
+    "ufw": true,
+    "fail2ban": true,
+    "psad": true,
+    "rkhunter": true,
+    "nmap": true
   }
 }
