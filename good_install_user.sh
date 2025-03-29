@@ -571,13 +571,3 @@ sudo chmod +x /usr/local/bin/cron_weekly_update.sh
 echo "30 5 * * 1 root /usr/local/bin/cron_weekly_update.sh" | sudo tee /etc/cron.d/cron-weekly-update > /dev/null
 
 log "✅ Установка завершена"
-
-
-# ==== ДОБАВЛЕНО: расширенная логика (security, кнопки, фильтры, очистка логов и т.д.) ====
-
-
-# === ДОБАВЛЕНО: inline-кнопки, команды /checklist, /clearlogs ===
-# TODO: вставка логики inline-кнопок и расширенных команд
-# TODO: перенос логов в ~/.local/share/telegram_bot/
-# TODO: фильтрация psad по времени (последние 24ч)
-# TODO: проверка и удаление старых скриптов
