@@ -9,7 +9,7 @@ SSH_PASSWORD_AUTH=$(jq -r '.ssh_password_auth' "$CONFIG_FILE")
 SUDO_NOPASSWD=$(jq -r '.sudo_nopasswd' "$CONFIG_FILE")
 MONITORING_ENABLED=$(jq -r '.monitoring_enabled' "$CONFIG_FILE")
 # Новые переменные для Telegram-бота (токен и чат ID из config.json)
-BOT_TOKEN=$(jq -r '.telegram_token' "$CONFIG_FILE")
+BOT_TOKEN=$(jq -r '.telegram_bot_token' "$CONFIG_FILE")
 CHAT_ID=$(jq -r '.telegram_chat_id' "$CONFIG_FILE")
 
 USERNAME=$(whoami)
