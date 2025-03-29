@@ -82,6 +82,7 @@ if [[ "$(jq -r '.monitoring_enabled' "$CONFIG_FILE")" == "true" ]]; then
 fi
 
 log "🤖 Установка продвинутого Telegram-бота"
+
 sudo tee /usr/local/bin/telegram_command_listener.sh > /dev/null <<EOF
 #!/bin/bash
 
@@ -100,8 +101,10 @@ OFFSET=$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)
 
 send_message() {
   local text="$1"
-  curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
-    -d chat_id="$CHAT_ID" -d parse_mode="Markdown" -d text="$text" > /dev/null
+  curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+    --data-urlencode chat_id="${CHAT_ID}" \
+    --data-urlencode parse_mode="Markdown" \
+    --data-urlencode text="${text}" > /dev/null
 }
 
 get_updates() {
@@ -184,8 +187,24 @@ $WHO_WITH_GEO"
         ;;
       /security)
         send_message "⏳ Выполняется проверка безопасности. Это может занять до 30 секунд..."
-        RKHUNTER_RESULT=$(sudo rkhunter --check --sk --nocolors | tail -n 100 || echo "Ошибка запуска rkhunter")
-        PSAD_RESULT=$(grep "Danger level" /var/log/psad/alert | tail -n 5 || echo "psad лог пуст")
+        echo "[BOT] Запускается rkhunter..." >> "$LOG_FILE"
+        OUT=$(timeout 30s sudo rkhunter --check --sk --nocolors)
+        EXIT_CODE=$?
+        if [[ "$EXIT_CODE" -eq 124 ]]; then
+          RKHUNTER_RESULT="⚠️ rkhunter не ответил за 30 секунд"
+        else
+          RKHUNTER_RESULT=$(echo "$OUT" | tail -n 100)
+        fi
+        if [[ -f /var/log/psad/alert ]]; then
+          PSAD_RESULT=$(grep "Danger level" /var/log/psad/alert | tail -n 5)
+          [[ -z "$PSAD_RESULT" ]] && PSAD_RESULT="psad лог пуст"
+        else
+          PSAD_RESULT="psad лог отсутствует"
+        fi
+        PSAD_STATUS=$(sudo psad -S | head -n 20 || echo "Ошибка запуска psad -S")
+        TOP_IPS=$(sudo grep -i "danger level" /var/log/psad/alert | tail -n 10 || echo "")
+        [[ -z "$TOP_IPS" ]] && TOP_IPS="Нет записей о сканированиях."
+
         send_message "*RKHunter (последние строки):*
 \`\`\`
 $RKHUNTER_RESULT
@@ -195,10 +214,19 @@ $RKHUNTER_RESULT
 \`\`\`
 $PSAD_RESULT
 \`\`\`"
+        send_message "*Статус PSAD:*
+\`\`\`
+$PSAD_STATUS
+\`\`\`"
+        send_message "*Top IP-адреса с угрозами:*
+\`\`\`
+$TOP_IPS
+\`\`\`"
         ;;
       /reboot)
         echo "1" > "$REBOOT_FLAG_FILE"
-        send_message "⚠️ Подтвердите перезагрузку сервера командой */confirm_reboot*"
+        send_message "⚠️ Подтвердите перезагрузку сервера командой 
+*/confirm_reboot*"
         ;;
       /confirm_reboot)
         if [[ -f "$REBOOT_FLAG_FILE" ]]; then
@@ -230,6 +258,7 @@ $LOG
   done
   sleep 2
 done
+
 EOF
 sudo chmod +x /usr/local/bin/telegram_command_listener.sh
 
@@ -341,5 +370,94 @@ CHECK_MSG=$(cat "$CHECKLIST" | sed 's/`/\`/g')
 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
   -d chat_id="$CHAT_ID" -d parse_mode="Markdown" -d text="\`\`\`$CHECK_MSG\`\`\`" > /dev/null
 rm "$CHECKLIST"
+
+
+log '🕒 Настройка cron-задач: безопасность, обновление, очистка логов'
+
+# === CRON: Скрипт безопасности с Telegram ===
+sudo tee /usr/local/bin/cron_security_check.sh > /dev/null <<EOF
+#!/bin/bash
+LOG_FILE="/var/log/security_monitor.log"
+BOT_TOKEN="8019987480:AAEJdUAAiGqlTFjOahWNh3RY5hiEwo3-E54"
+CHAT_ID="543102005"
+
+send_telegram() {
+    MESSAGE="$1"
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d chat_id="${CHAT_ID}" -d parse_mode="Markdown" -d text="$MESSAGE" > /dev/null
+}
+
+timestamp() {
+    date '+%Y-%m-%d %H:%M:%S'
+}
+echo "$(timestamp) | 🚀 Запуск проверки безопасности" >> "$LOG_FILE"
+
+RKHUNTER_RESULT=$(sudo rkhunter --check --sk --nocolors --rwo 2>/dev/null || true)
+if [ -n "$RKHUNTER_RESULT" ]; then
+    send_telegram "⚠️ *RKHunter нашёл подозрительные элементы:*\n\`\`\`\n$RKHUNTER_RESULT\n\`\`\`"
+    echo "$(timestamp) | ⚠️ RKHunter: найдены подозрения" >> "$LOG_FILE"
+else
+    send_telegram "✅ *RKHunter*: нарушений не обнаружено"
+    echo "$(timestamp) | ✅ RKHunter: всё чисто" >> "$LOG_FILE"
+fi
+
+PSAD_ALERTS=$(sudo grep "Danger level" /var/log/psad/alert | tail -n 5 || true)
+if echo "$PSAD_ALERTS" | grep -q "Danger level"; then
+    send_telegram "🚨 *PSAD предупреждение:*\n\`\`\`\n$PSAD_ALERTS\n\`\`\`"
+    echo "$(timestamp) | 🚨 PSAD: найдены угрозы" >> "$LOG_FILE"
+else
+    send_telegram "✅ *PSAD*: подозрительной активности не обнаружено"
+    echo "$(timestamp) | ✅ PSAD: всё спокойно" >> "$LOG_FILE"
+fi
+echo "$(timestamp) | ✅ Проверка завершена" >> "$LOG_FILE"
+EOF
+sudo chmod +x /usr/local/bin/cron_security_check.sh
+echo "0 7 * * * root /usr/local/bin/cron_security_check.sh" | sudo tee /etc/cron.d/cron-security-check > /dev/null
+
+# === CRON: Еженедельная очистка лога безопасности ===
+sudo tee /usr/local/bin/cron_clear_security_log.sh > /dev/null <<EOF
+#!/bin/bash
+LOG_FILE="/var/log/security_monitor.log"
+echo "$(date '+%Y-%m-%d %H:%M:%S') | Очистка лога безопасности (еженедельно)" > "$LOG_FILE"
+EOF
+sudo chmod +x /usr/local/bin/cron_clear_security_log.sh
+echo "0 6 * * 1 root /usr/local/bin/cron_clear_security_log.sh" | sudo tee /etc/cron.d/cron-clear-security-log > /dev/null
+
+# === CRON: Еженедельное обновление системы с Telegram-отчётом ===
+sudo tee /usr/local/bin/cron_weekly_update.sh > /dev/null <<EOF
+#!/bin/bash
+LOG_FILE="/var/log/weekly_update.log"
+BOT_TOKEN="8019987480:AAEJdUAAiGqlTFjOahWNh3RY5hiEwo3-E54"
+CHAT_ID="543102005"
+
+send_telegram() {
+    local MESSAGE="$1"
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+         -d chat_id="${CHAT_ID}" \
+         -d parse_mode="Markdown" \
+         --data-urlencode text="\${MESSAGE}" > /dev/null
+}
+
+log_and_echo() {
+    echo "$1" | tee -a "$LOG_FILE"
+}
+
+log_and_echo "🕖 ===== $(date '+%Y-%m-%d %H:%M:%S') | Начало обновления ====="
+apt update >> "$LOG_FILE" 2>&1
+apt upgrade -y >> "$LOG_FILE" 2>&1
+apt full-upgrade -y >> "$LOG_FILE" 2>&1
+apt autoremove -y >> "$LOG_FILE" 2>&1
+apt autoclean >> "$LOG_FILE" 2>&1
+log_and_echo "✅ $(date '+%Y-%m-%d %H:%M:%S') | Обновление завершено"
+log_and_echo ""
+
+TAIL_LOG=$(tail -n 40 "$LOG_FILE")
+send_telegram "🧰 *Еженедельное обновление сервера завершено:*
+\`\`\`
+${TAIL_LOG}
+\`\`\`"
+EOF
+sudo chmod +x /usr/local/bin/cron_weekly_update.sh
+echo "30 5 * * 1 root /usr/local/bin/cron_weekly_update.sh" | sudo tee /etc/cron.d/cron-weekly-update > /dev/null
 
 log "✅ Установка завершена"

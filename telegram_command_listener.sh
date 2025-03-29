@@ -17,12 +17,8 @@ send_message() {
   local text="$1"
   curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
     --data-urlencode chat_id="${CHAT_ID}" \
-    --data-urlencode parse_mode="HTML" \
+    --data-urlencode parse_mode="Markdown" \
     --data-urlencode text="${text}" > /dev/null
-}
-
-escape_html() {
-  echo "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
 get_updates() {
@@ -50,7 +46,8 @@ while true; do
 
     case "$MESSAGE" in
       /help | help)
-        send_message "<b>Команды:</b><pre>/uptime — аптайм
+        send_message "*Команды:*
+/uptime — аптайм
 /disk — диск
 /mem — память
 /top — топ процессов
@@ -60,41 +57,51 @@ while true; do
 /reboot — перезагрузка сервера
 /confirm_reboot — подтвердить перезагрузку
 /restart_bot — перезапуск бота
-/botlog — последние логи бота</pre>"
+/botlog — последние логи бота"
         ;;
       /uptime)
-        send_message "<b>Аптайм:</b> $(uptime -p)"
+        send_message "*Аптайм:* $(uptime -p)"
         ;;
       /disk)
-        TEXT=$(df -h / | escape_html)
-        send_message "<pre>$TEXT</pre>"
+        send_message "\`\`\`
+$(df -h /)
+\`\`\`"
         ;;
       /mem)
-        TEXT=$(free -h | escape_html)
-        send_message "<pre>$TEXT</pre>"
+        send_message "\`\`\`
+$(free -h)
+\`\`\`"
         ;;
       /top)
-        TEXT=$(ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head -n 10 | escape_html)
-        send_message "<pre>$TEXT</pre>"
+        send_message "\`\`\`
+$(ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head -n 10)
+\`\`\`"
         ;;
       /who)
         WHO_WITH_GEO=""
         while read -r user tty date time ip; do
           IP=$(echo "$ip" | tr -d '()')
           GEO=$(curl -s ipinfo.io/$IP | jq -r '.city + ", " + .region + ", " + .country + " (" + .org + ")"')
-          WHO_WITH_GEO+="👤 $user — $IP\n🌍 $GEO\n\n"
+          WHO_WITH_GEO+="👤 $user — $IP
+🌍 $GEO
+
+"
         done <<< "$(who | awk '{print $1, $2, $3, $4, $5}')"
-        ESCAPED=$(echo "$WHO_WITH_GEO" | escape_html)
-        send_message "<b>Сессии пользователей:</b>\n<pre>$ESCAPED</pre>"
+        send_message "*Сессии пользователей:*
+
+$WHO_WITH_GEO"
         ;;
       /ip)
         IP_INT=$(hostname -I | awk '{print $1}')
         IP_EXT=$(curl -s ifconfig.me)
         GEO=$(curl -s ipinfo.io/$IP_EXT | jq -r '.city + ", " + .region + ", " + .country + " (" + .org + ")"')
-        send_message "<b>Внутренний IP:</b> $IP_INT\n<b>Внешний IP:</b> $IP_EXT\n<b>Геолокация:</b> $GEO"
+        send_message "*Внутренний IP:* \`$IP_INT\`
+*Внешний IP:* \`$IP_EXT\`
+🌍 *Геолокация:* $GEO"
         ;;
       /security)
         send_message "⏳ Выполняется проверка безопасности. Это может занять до 30 секунд..."
+        echo "[BOT] Запускается rkhunter..." >> "$LOG_FILE"
         OUT=$(timeout 30s sudo rkhunter --check --sk --nocolors)
         EXIT_CODE=$?
         if [[ "$EXIT_CODE" -eq 124 ]]; then
@@ -109,16 +116,31 @@ while true; do
           PSAD_RESULT="psad лог отсутствует"
         fi
         PSAD_STATUS=$(sudo psad -S | head -n 20 || echo "Ошибка запуска psad -S")
-        TOP_IPS=$(sudo grep -i "danger level" /var/log/psad/alert | tail -n 10 || echo "Нет записей")
+        TOP_IPS=$(sudo grep -i "danger level" /var/log/psad/alert | tail -n 10 || echo "")
+        [[ -z "$TOP_IPS" ]] && TOP_IPS="Нет записей о сканированиях."
 
-        send_message "<b>RKHunter (последние строки):</b><pre>$(echo "$RKHUNTER_RESULT" | escape_html)</pre>"
-        send_message "<b>PSAD:</b><pre>$(echo "$PSAD_RESULT" | escape_html)</pre>"
-        send_message "<b>Статус PSAD:</b><pre>$(echo "$PSAD_STATUS" | escape_html)</pre>"
-        send_message "<b>Top IP-адреса с угрозами:</b><pre>$(echo "$TOP_IPS" | escape_html)</pre>"
+        send_message "*RKHunter (последние строки):*
+\`\`\`
+$RKHUNTER_RESULT
+\`\`\`
+
+*PSAD:*
+\`\`\`
+$PSAD_RESULT
+\`\`\`"
+        send_message "*Статус PSAD:*
+\`\`\`
+$PSAD_STATUS
+\`\`\`"
+        send_message "*Top IP-адреса с угрозами:*
+\`\`\`
+$TOP_IPS
+\`\`\`"
         ;;
       /reboot)
         echo "1" > "$REBOOT_FLAG_FILE"
-        send_message "⚠️ Подтвердите перезагрузку сервера командой <b>/confirm_reboot</b>"
+        send_message "⚠️ Подтвердите перезагрузку сервера командой 
+*/confirm_reboot*"
         ;;
       /confirm_reboot)
         if [[ -f "$REBOOT_FLAG_FILE" ]]; then
@@ -138,7 +160,10 @@ while true; do
         ;;
       /botlog)
         LOG=$(tail -n 30 "$LOG_FILE" 2>/dev/null || echo "Лог отсутствует.")
-        send_message "<b>Лог бота:</b><pre>$(echo "$LOG" | escape_html)</pre>"
+        send_message "*Лог бота:*
+\`\`\`
+$LOG
+\`\`\`"
         ;;
       *)
         send_message "Неизвестная команда. Напиши /help"
