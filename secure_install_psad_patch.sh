@@ -120,3 +120,20 @@ crontab "${TEMP_CRON}.new"
 rm -f "$TEMP_CRON" "${TEMP_CRON}.new"
 
 log "   "
+
+# === Настройка iptables для логирования ===
+iptables -C INPUT -j LOG 2>/dev/null || iptables -A INPUT -j LOG
+iptables -C FORWARD -j LOG 2>/dev/null || iptables -A FORWARD -j LOG
+
+# === Настройка rsyslog для psad ===
+if ! grep -q "psad" /etc/rsyslog.conf; then
+  echo ":msg, contains, \"psad\" /var/log/psad/alert" | tee -a /etc/rsyslog.conf
+  echo "& stop" | tee -a /etc/rsyslog.conf
+fi
+systemctl restart rsyslog
+
+# === Настройка psad.conf ===
+if grep -q "IPT_SYSLOG_FILE" /etc/psad/psad.conf; then
+  sed -i "s|^IPT_SYSLOG_FILE.*|IPT_SYSLOG_FILE             /var/log/kern.log;|" /etc/psad/psad.conf
+fi
+systemctl restart psad
